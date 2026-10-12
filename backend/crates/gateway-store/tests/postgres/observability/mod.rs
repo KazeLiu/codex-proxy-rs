@@ -124,6 +124,7 @@ async fn output_throughput_uses_official_response_duration_without_local_fallbac
         super::drain_analytics(&database.pool).await;
         let records = repository
             .list_usage_records(UsageRecordQuery {
+                include_failed: false,
                 range,
                 filter: UsageRecordFilter::default(),
                 current_page: 1,
@@ -234,6 +235,7 @@ async fn observability_preserves_and_filters_opaque_response_ids() {
     super::drain_analytics(&database.pool).await;
     let records = repository
         .list_usage_records(UsageRecordQuery {
+            include_failed: false,
             range,
             filter: UsageRecordFilter {
                 response_id: Some(response_id.clone()),
@@ -278,6 +280,7 @@ async fn usage_page_should_always_return_total() {
     super::drain_analytics(&database.pool).await;
     let page = observability_repository(&database.pool)
         .list_usage_records(UsageRecordQuery {
+            include_failed: false,
             range,
             filter: UsageRecordFilter::default(),
             current_page: 1,
@@ -350,6 +353,7 @@ async fn usage_list_and_diagnostics_preserve_account_snapshots_by_id() {
         super::drain_analytics(&database.pool).await;
         let page = store
             .list_usage_records(admin_observability::UsageQuery {
+                include_failed: false,
                 range,
                 filter: admin_observability::UsageFilter::default(),
                 current_page: 1,
@@ -439,6 +443,7 @@ async fn usage_list_and_diagnostics_preserve_account_snapshots_by_id() {
     super::drain_analytics(&database.pool).await;
     let page = store
         .list_usage_records(admin_observability::UsageQuery {
+            include_failed: false,
             range,
             filter: admin_observability::UsageFilter {
                 routing_group_refs: Vec::new(),
@@ -502,6 +507,7 @@ async fn usage_search_should_match_literal_prefix_instead_of_substring() {
     super::drain_analytics(&database.pool).await;
     let page = observability_repository(&database.pool)
         .list_usage_records(UsageRecordQuery {
+            include_failed: false,
             range,
             filter: UsageRecordFilter {
                 search: Some("observe_success".to_owned()),
@@ -641,6 +647,7 @@ async fn assert_usage_search_ids(
 ) {
     let page = observability_repository(pool)
         .list_usage_records(UsageRecordQuery {
+            include_failed: false,
             range,
             filter: UsageRecordFilter {
                 search: Some(search.to_owned()),
@@ -709,6 +716,7 @@ async fn usage_and_error_search_match_key_names_instead_of_credentials() {
             super::drain_analytics(&database.pool).await;
             let page = repository
                 .list_usage_records(UsageRecordQuery {
+                    include_failed: false,
                     range,
                     filter: UsageRecordFilter {
                         search: Some(search.to_owned()),
@@ -768,6 +776,7 @@ async fn usage_and_error_search_match_key_names_instead_of_credentials() {
         super::drain_analytics(&database.pool).await;
         let page = repository
             .list_usage_records(UsageRecordQuery {
+                include_failed: false,
                 range,
                 filter: UsageRecordFilter::default(),
                 current_page: 1,
@@ -1651,6 +1660,7 @@ async fn admin_observability_adapter_preserves_utc_queries_metrics_costs_and_det
     super::drain_analytics(&database.pool).await;
     let first_page = store
         .list_usage_records(admin_observability::UsageQuery {
+            include_failed: false,
             range,
             filter: admin_observability::UsageFilter::default(),
             current_page: 1,
@@ -1670,6 +1680,7 @@ async fn admin_observability_adapter_preserves_utc_queries_metrics_costs_and_det
     super::drain_analytics(&database.pool).await;
     let deep_page = store
         .list_usage_records(admin_observability::UsageQuery {
+            include_failed: false,
             range,
             filter: admin_observability::UsageFilter::default(),
             current_page: 129,
@@ -1685,6 +1696,7 @@ async fn admin_observability_adapter_preserves_utc_queries_metrics_costs_and_det
     super::drain_analytics(&database.pool).await;
     let filtered = store
         .list_usage_records(admin_observability::UsageQuery {
+            include_failed: false,
             range,
             filter: admin_observability::UsageFilter {
                 routing_group_refs: Vec::new(),
@@ -1714,6 +1726,7 @@ async fn admin_observability_adapter_preserves_utc_queries_metrics_costs_and_det
     super::drain_analytics(&database.pool).await;
     let other_outcome = store
         .list_usage_records(admin_observability::UsageQuery {
+            include_failed: false,
             range,
             filter: admin_observability::UsageFilter {
                 routing_group_refs: Vec::new(),
@@ -2139,6 +2152,7 @@ async fn observability_queries_preserve_request_account_cost_and_diagnostic_fact
     super::drain_analytics(&database.pool).await;
     let usage_page = repository
         .list_usage_records(UsageRecordQuery {
+            include_failed: false,
             range,
             filter: UsageRecordFilter {
                 provider_account_ref: Some("acct_observe".to_owned()),

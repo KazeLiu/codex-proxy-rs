@@ -122,6 +122,7 @@ pub(crate) fn literal_prefix_pattern(value: &str) -> String {
 
 pub(crate) const USAGE_LIST_RECORD_SELECT: &str =
     "select mr.id, mr.client_api_key_name_snapshot as client_api_key_name, mr.endpoint, mr.client_transport, mr.requested_model_id,
+            mr.outcome, mr.error_kind, mr.error_message, mr.recovered_at,
             mr.provider_kind, mr.provider_account_ref,
             mr.provider_account_name_snapshot as provider_account_name,
             mr.provider_account_email_snapshot as provider_account_email,
@@ -185,11 +186,23 @@ pub(crate) async fn list_usage_records(
         let total = if items.len() < usize::from(query.page_size.get()) {
             items.len() as u64
         } else {
-            count_usage_records(&mut *transaction, query.range, &query.filter).await?
+            count_usage_records(
+                &mut *transaction,
+                query.range,
+                &query.filter,
+                query.include_failed,
+            )
+            .await?
         };
         (total, items)
     } else {
-        let total = count_usage_records(&mut *transaction, query.range, &query.filter).await?;
+        let total = count_usage_records(
+            &mut *transaction,
+            query.range,
+            &query.filter,
+            query.include_failed,
+        )
+        .await?;
         let items = list_usage_record_items(&mut *transaction, &query, Some(total)).await?;
         (total, items)
     };
@@ -234,7 +247,7 @@ pub(crate) async fn list_usage_record_items<'e, E: sqlx::Executor<'e, Database =
     statement.push_bind(query.range.start);
     statement.push(" and mr.started_at < ");
     statement.push_bind(query.range.end);
-    push_completed_usage_fact_filter(&mut statement, "mr");
+    push_record_scope(&mut statement, query.include_failed);
     push_usage_filter(&mut statement, &query.filter, "mr");
     statement.push(if ascending {
         " order by mr.started_at, mr.id limit "
@@ -265,6 +278,7 @@ pub(crate) async fn count_usage_records<'e, E: sqlx::Executor<'e, Database = Pos
     executor: E,
     range: ObservabilityRange,
     filter: &UsageRecordFilter,
+    include_failed: bool,
 ) -> StoreResult<u64> {
     let mut statement = QueryBuilder::<Postgres>::new(
         "select count(*)::bigint from model_request_observations mr where mr.started_at >= ",
@@ -272,7 +286,7 @@ pub(crate) async fn count_usage_records<'e, E: sqlx::Executor<'e, Database = Pos
     statement.push_bind(range.start);
     statement.push(" and mr.started_at < ");
     statement.push_bind(range.end);
-    push_completed_usage_fact_filter(&mut statement, "mr");
+    push_record_scope(&mut statement, include_failed);
     push_usage_filter(&mut statement, filter, "mr");
     let total = statement
         .build_query_scalar::<i64>()
@@ -280,6 +294,25 @@ pub(crate) async fn count_usage_records<'e, E: sqlx::Executor<'e, Database = Pos
         .await
         .map_err(|source| postgres_unavailable("count usage records", source))?;
     to_u64(total)
+}
+
+fn push_record_scope(statement: &mut QueryBuilder<Postgres>, include_failed: bool) {
+    if !include_failed {
+        push_completed_usage_fact_filter(statement, "mr");
+        return;
+    }
+    // 混合列表只增加已终结的模型请求，运维事件、预热和用量统计仍各自保持原有范围
+    statement.push(" and (");
+    statement.push(completed_usage_fact_predicate("mr"));
+    statement.push(
+        " or (mr.completed_at is not null
+              and mr.outcome in ('failed', 'cancelled', 'incomplete')
+              and (mr.provider_kind is distinct from 'openai'
+                   or mr.request_kind is distinct from 'prewarm')
+              and (mr.requested_model_id is not null
+                   or mr.upstream_model_id is not null
+                   or mr.image_generation_requested)))",
+    );
 }
 
 pub(crate) async fn usage_record_detail(

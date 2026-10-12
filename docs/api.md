@@ -1816,6 +1816,15 @@ Dashboard 的 `accountUsage[]` 由后端提供 `usageWindow`、`metricLabel`、`
 Dashboard 默认 `period=today`，用量、诊断和错误查询默认 `period=7d`，范围参数遵循[页面时间合同](#页面时间合同)。
 Dashboard 返回原始 `asOf` 及 `asOfDisplay`，作为当前数据的查询锚点
 
+`GET /api/admin/usage/records` 默认返回具有完整交付用量事实的成功请求。
+`includeFailed=true` 同时返回已结束的失败、取消和未完成模型请求，每个请求只占一行，
+不包含运维事件、入口拒绝或 OpenAI 预热请求。列表及分页总数使用相同范围，
+统一按请求开始时间倒序，同一时间按请求 ID 倒序，`createdAt` / `createdAtDisplay` 表示开始时间
+
+列表中的 `logicalOutcome` 区分 `succeeded`、`failed`、`cancelled` 和 `incomplete`。
+`message` / `errorKind` 为错误摘要及分类，`recoveredAt` 表示已关联到后续成功请求。
+未采集字段为 `null`，恢复关联不改变原请求结果，完整状态码与恢复关系通过请求详情查询
+
 用量查询可组合页码/游标、时间范围、Provider、Client Key、账号、模型、route、transport、状态码、
 request/response/upstream ID、outcome 与搜索文本。诊断 `dimension` 可取 `model`、`account`、
 `apiKey`、`provider`、`transport`、`failureClass`、`status`。诊断按请求量降序返回最多 100 项，

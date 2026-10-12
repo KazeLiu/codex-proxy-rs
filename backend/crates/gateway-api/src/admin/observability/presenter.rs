@@ -274,6 +274,10 @@ pub(crate) fn usage_list_record_view(
     UsageListRecordView {
         client_api_key_name: record.client_api_key_name,
         id: record.id,
+        logical_outcome: record.outcome.as_str().to_owned(),
+        error_kind: record.error_kind,
+        message: record.error_message,
+        recovered_at: record.recovered_at,
         provider: record.provider_kind,
         authentication_kind: record.provider_account_authentication_kind,
         account_id: record.provider_account_ref,

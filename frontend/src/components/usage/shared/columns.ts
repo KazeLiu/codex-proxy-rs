@@ -11,6 +11,7 @@ export const usageRecordColumns = defineTableColumns<UsageListRecord>([
     kind: 'identity',
     size: '3xl',
   },
+  { key: 'logicalOutcome', label: '状态', kind: 'status', size: 'md', defaultHidden: true },
   { key: 'accountPlanType', label: '订阅', kind: 'status', size: 'sm', fixedWidth: true },
   {
     key: 'provider',
@@ -21,6 +22,7 @@ export const usageRecordColumns = defineTableColumns<UsageListRecord>([
     formatter: (value: unknown) => formatProviderLabel(typeof value === 'string' ? value : null),
   },
   { key: 'model', label: '模型', kind: 'custom', size: 'xl' },
+  { key: 'message', label: '错误摘要', kind: 'custom', size: '3xl', defaultHidden: true },
   { key: 'reasoningEffort', label: '推理强度', kind: 'status', size: 'md', align: 'left' },
   { key: 'route', label: '端点', kind: 'mono' },
   { key: 'upstreamTransport', label: '上游', kind: 'status', size: 'md' },
@@ -34,3 +36,25 @@ export const usageRecordColumns = defineTableColumns<UsageListRecord>([
   { key: 'userAgent', label: 'User-Agent', kind: 'custom', size: '4xl' },
   { key: 'actions', label: '操作', kind: 'actions', size: 'sm', hideable: false },
 ])
+
+export const usageRecordMinimumWidths: Readonly<Record<string, number>> = {
+  clientApiKeyName: 120,
+  accountEmail: 160,
+  logicalOutcome: 104,
+  accountPlanType: 88,
+  provider: 104,
+  model: 144,
+  message: 180,
+  reasoningEffort: 88,
+  route: 144,
+  upstreamTransport: 80,
+  clientTransport: 80,
+  tokenDetails: 136,
+  billing: 136,
+  latency: 120,
+  performance: 112,
+  createdAtDisplay: 176,
+  clientIp: 144,
+  userAgent: 180,
+  actions: 64,
+}

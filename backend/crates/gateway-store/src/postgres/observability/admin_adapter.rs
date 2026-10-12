@@ -173,6 +173,7 @@ impl PgObservabilityRepository {
         let account_usage_query = ProviderAccountUsageQuery::recent(range, query.account_limit)?
             .with_hourly_request_buckets()?;
         let recent_query = UsageRecordQuery {
+            include_failed: false,
             range,
             filter: store_usage_filter(query.recent_request_filter),
             current_page: 1,

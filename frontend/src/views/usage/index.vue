@@ -2,7 +2,7 @@
 import { useTableColumns, ZCard, ZIconButton, ZPageHeader, ZPagination, ZSegmented, ZSelect, ZTableColumnSettings } from '@codex-proxy/ui'
 
 import { Eye } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, useTemplateRef, watch } from 'vue'
 import ProviderFilter from '@/components/ProviderFilter.vue'
 import { usageRecordColumns } from '@/components/usage/shared/columns'
 import UsageRecordsTable from '@/components/usage/UsageRecordsTable.vue'
@@ -17,8 +17,15 @@ import { useUsageTimeRange } from './composables/useUsageTimeRange'
 import { usageTimeRangeOptions } from './constants'
 
 const recordView = shallowRef('success')
-const { visibleColumns, columnOptions, setColumnVisible, setColumnOrder, resetColumns } = useTableColumns(usageRecordColumns, 'usage-records')
+const columns = computed(() => usageRecordColumns.map(column =>
+  column.key === 'logicalOutcome' || column.key === 'message'
+    ? { ...column, defaultHidden: recordView.value !== 'all' }
+    : column,
+))
+const { visibleColumns, columnOptions, setColumnVisible, setColumnOrder, resetColumns } = useTableColumns(columns, 'usage-records')
+const recordsTable = useTemplateRef('recordsTable')
 const recordViewOptions = [
+  { label: '全部', value: 'all' },
   { label: '成功记录', value: 'success' },
   { label: '错误排查', value: 'errors' },
 ]
@@ -45,10 +52,16 @@ const {
 } = useUsageRecordsTable({
   timeRangeParams,
   latestTimeRangeParams,
-  active: computed(() => recordView.value === 'success'),
+  active: computed(() => recordView.value !== 'errors'),
+  includeFailed: computed(() => recordView.value === 'all'),
 })
 
 const { showDetailModal, selectedUsageRecord, handleViewDetail } = useUsageRecordDetail()
+
+function resetTableColumns() {
+  resetColumns()
+  recordsTable.value?.resetColumnWidths()
+}
 
 watch(timeRange, () => {
   refreshTimeRangeEnd()
@@ -93,13 +106,13 @@ watch(timeRange, () => {
               成功请求与失败请求明细
             </p>
           </div>
-          <ZSegmented v-model="recordView" aria-label="请求明细类型" :options="recordViewOptions" class="w-52" />
+          <ZSegmented v-model="recordView" aria-label="请求明细类型" :options="recordViewOptions" class="w-68 max-w-full" />
         </div>
       </template>
 
       <template #body>
         <div
-          v-show="recordView === 'success'"
+          v-show="recordView !== 'errors'"
           class="grid min-h-130 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3"
         >
           <UsageFilters
@@ -113,13 +126,15 @@ watch(timeRange, () => {
                 :options="columnOptions"
                 @change="setColumnVisible"
                 @reorder="setColumnOrder"
-                @reset="resetColumns"
+                @reset="resetTableColumns"
               />
             </template>
           </UsageFilters>
 
           <div class="flex min-h-0 min-w-0 flex-col">
             <UsageRecordsTable
+              ref="recordsTable"
+              table-id="usage-records"
               class="min-h-0 flex-1"
               :columns="visibleColumns"
               :rows="records"

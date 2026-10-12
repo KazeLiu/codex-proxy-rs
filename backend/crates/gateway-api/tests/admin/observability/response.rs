@@ -858,6 +858,10 @@ async fn usage_route_should_expose_table_facts_without_detail_payload() {
         .lock()
         .expect("usage records")
         .push(UsageListRecord {
+            outcome: gateway_admin::model::observability::RequestOutcome::Succeeded,
+            error_kind: None,
+            error_message: None,
+            recovered_at: None,
             client_api_key_name: Some("Production".to_owned()),
             id: "request_endpoint".to_owned(),
             endpoint: "/v1/responses".to_owned(),

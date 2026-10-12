@@ -2,10 +2,11 @@
 import type { TableColumn } from '@codex-proxy/ui'
 import type { UsageListRecord } from '@/api'
 
-import { ZTable } from '@codex-proxy/ui'
 import { Minimize2 } from '@lucide/vue'
+import { useTemplateRef } from 'vue'
 import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import ProviderIconGroup from '@/components/ProviderIconGroup.vue'
+import ResizableTable from '@/components/table/ResizableTable.vue'
 import UsageBillingCell from '@/components/usage/UsageBillingCell.vue'
 import UsageClientIpCell from '@/components/usage/UsageClientIpCell.vue'
 import UsageLatencyCell from '@/components/usage/UsageLatencyCell.vue'
@@ -14,14 +15,18 @@ import UsagePerformanceCell from '@/components/usage/UsagePerformanceCell.vue'
 import UsageReasoningEffortCell from '@/components/usage/UsageReasoningEffortCell.vue'
 import UsageTokenCell from '@/components/usage/UsageTokenCell.vue'
 import UsageTransportBadge from '@/components/usage/UsageTransportBadge.vue'
+import { usageRecordMinimumWidths } from './shared/columns'
 import {
   usageAccountText,
+  usageOutcomeClass,
+  usageOutcomeText,
   usageUserAgent,
 } from './shared/presenter'
 
 // 使用记录表只负责该领域的单元格呈现；筛选与分页由页面组合。
 withDefaults(
   defineProps<{
+    tableId: string
     columns: TableColumn<UsageListRecord>[]
     rows: UsageListRecord[]
     loading?: boolean
@@ -32,15 +37,39 @@ withDefaults(
     emptyText: '暂无使用记录',
   },
 )
+
+const table = useTemplateRef('table')
+
+defineExpose({ resetColumnWidths: () => table.value?.resetColumnWidths() })
 </script>
 
 <template>
-  <ZTable
+  <ResizableTable
+    ref="table"
+    :table-id="tableId"
     :columns="columns"
+    :minimum-widths="usageRecordMinimumWidths"
     :data="rows"
     :loading="loading"
     :empty-text="emptyText"
   >
+    <template #logicalOutcome="{ row }">
+      <div class="flex flex-col items-center gap-1">
+        <span :class="usageOutcomeClass(row.logicalOutcome ?? 'succeeded')">
+          {{ usageOutcomeText(row.logicalOutcome ?? 'succeeded') }}
+        </span>
+        <span v-if="row.recoveredAt" class="text-cp-xs text-cp-success-text">已自动恢复</span>
+      </div>
+    </template>
+
+    <template #message="{ row }">
+      <span
+        class="block truncate text-cp-sm text-cp-error-text"
+        :title="row.message || row.errorKind || undefined"
+      >
+        {{ row.message || row.errorKind || '—' }}
+      </span>
+    </template>
     <template #clientApiKeyName="{ displayValue }">
       <span
         class="block max-w-full truncate font-mono text-cp-sm leading-none font-bold text-cp-text"
@@ -142,5 +171,5 @@ withDefaults(
     <template v-if="$slots.actions" #actions="scope">
       <slot name="actions" v-bind="scope" />
     </template>
-  </ZTable>
+  </ResizableTable>
 </template>

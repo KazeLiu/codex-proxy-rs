@@ -82,12 +82,16 @@ pub struct ImageBillingView {
     pub cache_read_price_display: String,
 }
 
-/// 使用记录表格的窄展示
+/// 请求记录表格的窄展示
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageListRecordView {
     pub client_api_key_name: Option<String>,
     pub id: String,
+    pub logical_outcome: String,
+    pub error_kind: Option<String>,
+    pub message: Option<String>,
+    pub recovered_at: Option<DateTime<Utc>>,
     pub provider: Option<String>,
     pub authentication_kind: Option<String>,
     pub account_id: Option<String>,

@@ -176,6 +176,8 @@ pub struct UsageFilter {
 /// 用量记录分页查询
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageQuery {
+    /// 仅扩展列表范围，不改变成功用量统计
+    pub include_failed: bool,
     pub range: TimeRange,
     pub filter: UsageFilter,
     pub current_page: u32,
@@ -652,11 +654,15 @@ pub struct DashboardObservation {
     pub recent_requests: Vec<UsageListRecord>,
 }
 
-/// 使用记录表格的窄读模型
+/// 请求记录表格的窄读模型
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageListRecord {
     pub client_api_key_name: Option<String>,
     pub id: String,
+    pub outcome: RequestOutcome,
+    pub error_kind: Option<String>,
+    pub error_message: Option<String>,
+    pub recovered_at: Option<DateTime<Utc>>,
     pub endpoint: String,
     pub client_transport: String,
     pub requested_model_id: Option<String>,

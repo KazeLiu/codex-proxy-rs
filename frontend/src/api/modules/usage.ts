@@ -84,6 +84,10 @@ export interface UsageRecordMetadata {
 export interface UsageListRecord {
   clientApiKeyName: string | null
   id: string
+  logicalOutcome?: string
+  errorKind?: string | null
+  message?: string | null
+  recoveredAt?: string | null
   provider: string | null
   authenticationKind: string | null
   accountId: string | null
@@ -498,9 +502,9 @@ interface PageQuery {
   pageSize: number
 }
 
-type UsagePageQuery = UsageRangeQuery & PageQuery
+type UsagePageQuery = UsageRangeQuery & PageQuery & { includeFailed?: boolean }
 
-type OpsErrorPageQuery = UsagePageQuery
+type OpsErrorPageQuery = UsageRangeQuery & PageQuery
 
 interface UsageDetailQuery {
   id: string

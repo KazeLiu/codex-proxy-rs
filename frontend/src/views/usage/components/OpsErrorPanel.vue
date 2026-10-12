@@ -2,15 +2,16 @@
 import type { UsageTimeRangeParams } from '../composables/useUsageTimeRange'
 import type { OpsError } from '@/api'
 
-import { useTableColumns, ZIconButton, ZInput, ZPagination, ZTable, ZTableColumnSettings } from '@codex-proxy/ui'
+import { useTableColumns, ZIconButton, ZInput, ZPagination, ZTableColumnSettings } from '@codex-proxy/ui'
 import { Eye, RefreshCw, Search } from '@lucide/vue'
-import { shallowRef, toRef } from 'vue'
+import { shallowRef, toRef, useTemplateRef } from 'vue'
 import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import ProviderIconGroup from '@/components/ProviderIconGroup.vue'
+import ResizableTable from '@/components/table/ResizableTable.vue'
 import { usageUserAgent } from '@/components/usage/shared/presenter'
 import UsageClientIpCell from '@/components/usage/UsageClientIpCell.vue'
 import { useOpsErrorsTable } from '../composables/useOpsErrorsTable'
-import { opsErrorColumns } from '../constants'
+import { opsErrorColumns, opsErrorMinimumWidths } from '../constants'
 import { opsErrorSummary } from '../utils/opsErrorPresentation'
 import OpsErrorDetailModal from './OpsErrorDetailModal.vue'
 
@@ -41,6 +42,12 @@ const {
 const selectedRecord = shallowRef<OpsError | null>(null)
 const detailOpen = shallowRef(false)
 const { visibleColumns, columnOptions, setColumnVisible, setColumnOrder, resetColumns } = useTableColumns(opsErrorColumns, 'ops-errors')
+const recordsTable = useTemplateRef('recordsTable')
+
+function resetTableColumns() {
+  resetColumns()
+  recordsTable.value?.resetColumnWidths()
+}
 
 const upstreamSendStateLabels: Record<string, string> = {
   sent: '已发送',
@@ -109,7 +116,7 @@ function upstreamSendStateText(value: string | null | undefined) {
           :options="columnOptions"
           @change="setColumnVisible"
           @reorder="setColumnOrder"
-          @reset="resetColumns"
+          @reset="resetTableColumns"
         />
         <ZIconButton
           size="default"
@@ -130,10 +137,13 @@ function upstreamSendStateText(value: string | null | undefined) {
       <p v-if="error && !loading" role="alert" class="text-cp-sm text-cp-error-text">
         {{ error }}，请刷新重试
       </p>
-      <ZTable
+      <ResizableTable
         v-else
+        ref="recordsTable"
+        table-id="ops-errors"
         class="min-h-0 flex-1"
         :columns="visibleColumns"
+        :minimum-widths="opsErrorMinimumWidths"
         :data="records"
         :loading="loading"
         empty-text="当前时段没有错误"
@@ -223,7 +233,7 @@ function upstreamSendStateText(value: string | null | undefined) {
             <Eye class="size-4.5" />
           </ZIconButton>
         </template>
-      </ZTable>
+      </ResizableTable>
       <ZPagination
         v-bind="pagination"
         :disabled="loading"

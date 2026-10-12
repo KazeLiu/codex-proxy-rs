@@ -7,6 +7,8 @@ import { computed } from 'vue'
 import BaseChart from '@/components/charts/BaseChart.vue'
 import { chartTooltipStyle } from '@/components/charts/tooltip'
 import {
+  usageOutcomeClass as attemptOutcomeClass,
+  usageOutcomeText as attemptOutcomeText,
   usageAccountText,
   usageBillingText,
   usageClientIp,
@@ -137,25 +139,6 @@ const attemptRows = computed<AttemptRow[]>(() =>
     latencyMs: attempt.latencyMs,
   })),
 )
-
-function attemptOutcomeText(outcome: string) {
-  const labels: Record<string, string> = {
-    succeeded: '成功',
-    failed: '失败',
-    cancelled: '取消',
-    incomplete: '未完成',
-    running: '进行中',
-  }
-  return labels[outcome] ?? outcome
-}
-
-function attemptOutcomeClass(outcome: string) {
-  if (outcome === 'succeeded')
-    return 'text-cp-success-text'
-  if (outcome === 'failed')
-    return 'text-cp-error-text'
-  return 'text-cp-text-secondary'
-}
 
 const billingItems = computed(() => {
   const value = billing.value

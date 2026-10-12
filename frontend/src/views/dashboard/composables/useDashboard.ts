@@ -1,8 +1,8 @@
-import type { DashboardTrendResponse } from '@/api'
-import { useIntervalFn } from '@vueuse/core'
-import { computed, onMounted, onScopeDispose, shallowRef } from 'vue'
+import type { DashboardTrendResponse, UsageListRecord } from '@/api'
+import { useIntervalFn, useStorage } from '@vueuse/core'
+import { computed, onMounted, onScopeDispose, shallowRef, watch } from 'vue'
 
-import { getDashboardSummary, getDashboardTrend } from '@/api'
+import { getDashboardSummary, getDashboardTrend, getUsageRecords } from '@/api'
 import { errorMessage, withMinimumDuration } from '@/utils/operation'
 import { dashboardSnapshotView, dashboardTrendView, normalizeDashboardTrendKind } from '../presenter'
 
@@ -16,7 +16,13 @@ export function useDashboard() {
   const loading = shallowRef(false)
   const refreshing = shallowRef(false)
   const lastRefreshedAt = shallowRef('')
-  let rangeAsOf = Date.now()
+  const rangeAsOf = shallowRef<number | null>(null)
+  const showFailedRecords = useStorage('codex-proxy:dashboard-show-failed', false)
+  const mixedRecords = shallowRef<UsageListRecord[]>([])
+  const usageRecordsLoading = shallowRef(false)
+  const usageRecordsError = shallowRef('')
+  let recordsRequestId = 0
+  let recordsController: AbortController | undefined
   let trendRequestId = 0
   let disposed = false
   let summaryController: AbortController | undefined
@@ -27,7 +33,7 @@ export function useDashboard() {
   const healthTimeline = computed(() => snapshot.value.healthTimeline)
   const accountUsage = computed(() => snapshot.value.accountUsage)
   const wireProfiles = computed(() => snapshot.value.wireProfiles)
-  const usageRecords = computed(() => snapshot.value.usageRecords)
+  const usageRecords = computed(() => showFailedRecords.value ? mixedRecords.value : snapshot.value.usageRecords)
   const poolSummary = computed(() => snapshot.value.poolSummary)
   const capacityInfo = computed(() => snapshot.value.capacityInfo)
   const rotationStrategy = computed(() => snapshot.value.rotationStrategy)
@@ -84,7 +90,7 @@ export function useDashboard() {
     trendLoading.value = true
     trendError.value = ''
     try {
-      const result = await getDashboardTrend({ kind: trendKind, period: 'today', asOf: rangeAsOf }, { signal: trendController.signal })
+      const result = await getDashboardTrend({ kind: trendKind, period: 'today', asOf: rangeAsOf.value ?? Date.now() }, { signal: trendController.signal })
       if (isCurrentTrendRequest(requestId, trendKind))
         trend.value = result
     }
@@ -113,7 +119,7 @@ export function useDashboard() {
       const summary = await getDashboardSummary({ kind: trendKind, period: 'today', asOf }, { silent, signal: summaryController.signal })
       if (disposed)
         return
-      rangeAsOf = asOf
+      rangeAsOf.value = asOf
       snapshot.value = dashboardSnapshotView(summary)
       analyticsError.value = ''
       lastRefreshedAt.value = summary.asOfDisplay
@@ -147,6 +153,50 @@ export function useDashboard() {
     return !disposed && requestId === trendRequestId && activeTrendKind.value === kind
   }
 
+  async function loadMixedRecords(asOf: number) {
+    const requestId = ++recordsRequestId
+    recordsController?.abort()
+    recordsController = new AbortController()
+    usageRecordsLoading.value = true
+    usageRecordsError.value = ''
+    mixedRecords.value = []
+    try {
+      const result = await getUsageRecords({
+        period: 'today',
+        asOf,
+        currentPage: 1,
+        pageSize: 10,
+        includeFailed: true,
+      }, { signal: recordsController.signal, silent: true })
+      if (!disposed && requestId === recordsRequestId)
+        mixedRecords.value = result.items
+    }
+    catch (error: unknown) {
+      if (!disposed && requestId === recordsRequestId)
+        usageRecordsError.value = errorMessage(error)
+    }
+    finally {
+      if (requestId === recordsRequestId) {
+        usageRecordsLoading.value = false
+        recordsController = undefined
+      }
+    }
+  }
+
+  watch([showFailedRecords, rangeAsOf], ([showFailed, asOf]) => {
+    if (showFailed && asOf !== null) {
+      void loadMixedRecords(asOf)
+    }
+    else {
+      recordsRequestId += 1
+      recordsController?.abort()
+      recordsController = undefined
+      mixedRecords.value = []
+      usageRecordsLoading.value = false
+      usageRecordsError.value = ''
+    }
+  })
+
   onMounted(() => {
     void loadDashboardData()
     startAutoRefresh()
@@ -155,8 +205,10 @@ export function useDashboard() {
   onScopeDispose(() => {
     disposed = true
     trendRequestId += 1
+    recordsRequestId += 1
     summaryController?.abort()
     trendController?.abort()
+    recordsController?.abort()
   })
 
   return {
@@ -175,6 +227,9 @@ export function useDashboard() {
     accountUsage,
     wireProfiles,
     usageRecords,
+    showFailedRecords,
+    usageRecordsLoading,
+    usageRecordsError,
     poolSummary,
     capacityInfo,
     rotationStrategy,

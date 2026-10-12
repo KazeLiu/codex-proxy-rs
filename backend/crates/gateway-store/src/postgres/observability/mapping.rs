@@ -42,6 +42,7 @@ pub(crate) fn store_usage_query(
     query: admin_observability::UsageQuery,
 ) -> AdminStoreResult<UsageRecordQuery> {
     Ok(UsageRecordQuery {
+        include_failed: query.include_failed,
         range: store_range(query.range).map_err(observability_error)?,
         filter: store_usage_filter(query.filter),
         current_page: query.current_page,
@@ -304,6 +305,10 @@ pub(crate) fn usage_list_record_from_row(
     )?;
     Ok(UsageListRecord {
         client_api_key_name: get(row, "client_api_key_name")?,
+        outcome: request_outcome(&get::<String>(row, "outcome")?)?,
+        error_kind: get(row, "error_kind")?,
+        error_message: get(row, "error_message")?,
+        recovered_at: get(row, "recovered_at")?,
         billing,
         id: get(row, "id")?,
         endpoint: get(row, "endpoint")?,

@@ -39,6 +39,7 @@ async fn usage_pages_preserve_order_and_exact_totals_from_both_ends() {
         for page in 1..=5 {
             let result = repository
                 .list_usage_records(UsageRecordQuery {
+                    include_failed: false,
                     range,
                     filter: UsageRecordFilter {
                         client_api_key_ref: key.map(str::to_owned),

@@ -1288,6 +1288,7 @@ async fn account_snapshot(
 
 fn usage_query(started_at: DateTime<Utc>, filter: UsageRecordFilter) -> UsageRecordQuery {
     UsageRecordQuery {
+        include_failed: false,
         range: range_around(started_at),
         filter,
         current_page: 1,

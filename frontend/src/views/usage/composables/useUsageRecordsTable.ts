@@ -16,6 +16,7 @@ interface UseUsageRecordsTableOptions {
   timeRangeParams: Readonly<Ref<UsageTimeRangeParams>>
   latestTimeRangeParams: () => UsageTimeRangeParams
   active: Readonly<Ref<boolean>>
+  includeFailed: Readonly<Ref<boolean>>
 }
 
 type UsageLoadScope = 'all' | 'table'
@@ -59,6 +60,7 @@ export function useUsageRecordsTable(options: UseUsageRecordsTableOptions) {
       ...options.latestTimeRangeParams(),
       provider: providerQuery.value || undefined,
       search: search.value,
+      ...(options.includeFailed.value ? { includeFailed: true } : {}),
     }
   }
 
@@ -194,7 +196,7 @@ export function useUsageRecordsTable(options: UseUsageRecordsTableOptions) {
     void loadUsageRecords()
   })
 
-  watch(options.active, (active) => {
+  watch([options.active, options.includeFailed], ([active]) => {
     if (active) {
       void reloadLatestTable()
     }

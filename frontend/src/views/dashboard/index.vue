@@ -17,6 +17,9 @@ const {
   accountUsage,
   wireProfiles,
   usageRecords,
+  showFailedRecords,
+  usageRecordsLoading,
+  usageRecordsError,
   poolSummary,
   capacityInfo,
   rotationStrategy,
@@ -29,6 +32,7 @@ const {
 <template>
   <DashboardContent
     v-model:trend-kind="activeTrendKind"
+    v-model:show-failed-records="showFailedRecords"
     :loading="loading"
     :refreshing="refreshing"
     :last-refreshed-at="lastRefreshedAt"
@@ -43,6 +47,8 @@ const {
     :account-usage="accountUsage"
     :wire-profiles="wireProfiles"
     :usage-records="usageRecords"
+    :usage-records-loading="usageRecordsLoading"
+    :usage-records-error="usageRecordsError"
     :pool-summary="poolSummary"
     :capacity-info="capacityInfo"
     :rotation-strategy="rotationStrategy"

@@ -32,6 +32,8 @@ withDefaults(
     accountUsage: DashboardSnapshotView['accountUsage']
     wireProfiles: DashboardSnapshotView['wireProfiles']
     usageRecords: DashboardSnapshotView['usageRecords']
+    usageRecordsLoading?: boolean
+    usageRecordsError?: string
     poolSummary: DashboardSnapshotView['poolSummary']
     capacityInfo: DashboardSnapshotView['capacityInfo']
     rotationStrategy: DashboardSnapshotView['rotationStrategy']
@@ -43,6 +45,8 @@ withDefaults(
     analyticsError: '',
     trendLoading: false,
     trendError: '',
+    usageRecordsLoading: false,
+    usageRecordsError: '',
   },
 )
 
@@ -52,6 +56,7 @@ const emit = defineEmits<{
 }>()
 
 const trendKind = defineModel<DashboardTrendKind>('trendKind', { required: true })
+const showFailedRecords = defineModel<boolean>('showFailedRecords', { default: false })
 </script>
 
 <template>
@@ -114,7 +119,13 @@ const trendKind = defineModel<DashboardTrendKind>('trendKind', { required: true 
 
       <RequestHealthTimelineCard :timeline="healthTimeline" class="mt-6" />
 
-      <UsageRecordCard :rows="usageRecords" class="mt-6" />
+      <UsageRecordCard
+        v-model:show-failed="showFailedRecords"
+        :rows="usageRecords"
+        :loading="usageRecordsLoading"
+        :error="usageRecordsError"
+        class="mt-6"
+      />
     </template>
   </div>
 </template>

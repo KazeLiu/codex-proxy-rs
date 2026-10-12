@@ -17,6 +17,22 @@ export const opsErrorColumns = defineTableColumns<OpsError>([
   { key: 'actions', label: '操作', kind: 'actions', size: 'sm', hideable: false },
 ])
 
+export const opsErrorMinimumWidths: Readonly<Record<string, number>> = {
+  clientApiKeyName: 120,
+  accountId: 160,
+  accountPlanType: 88,
+  provider: 104,
+  message: 180,
+  upstreamSendState: 104,
+  model: 144,
+  route: 144,
+  createdAtDisplay: 176,
+  requestId: 160,
+  clientIp: 144,
+  userAgent: 180,
+  actions: 64,
+}
+
 export const usageTimeRangeOptions = [
   { label: '今天', value: 'today' },
   { label: '最近 7 天', value: '7d' },

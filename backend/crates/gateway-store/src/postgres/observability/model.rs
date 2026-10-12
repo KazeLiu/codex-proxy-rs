@@ -96,6 +96,7 @@ impl UsageRecordFilter {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageRecordQuery {
+    pub include_failed: bool,
     pub range: ObservabilityRange,
     pub filter: UsageRecordFilter,
     pub current_page: u32,

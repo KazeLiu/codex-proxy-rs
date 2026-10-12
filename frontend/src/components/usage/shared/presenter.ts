@@ -21,6 +21,25 @@ interface UsageTimingSection {
   items: UsageTimingItem[]
 }
 
+export function usageOutcomeText(outcome: string) {
+  const labels: Readonly<Record<string, string>> = {
+    succeeded: '成功',
+    failed: '失败',
+    cancelled: '取消',
+    incomplete: '未完成',
+    running: '进行中',
+  }
+  return labels[outcome] ?? outcome
+}
+
+export function usageOutcomeClass(outcome: string) {
+  if (outcome === 'succeeded')
+    return 'text-cp-success-text'
+  if (outcome === 'failed')
+    return 'text-cp-error-text'
+  return 'text-cp-text-secondary'
+}
+
 export function usageFreshInputTokens(input: number, cached: number, written: number) {
   // 输入总量包含缓存读写，普通输入与缓存明细分开展示
   return Math.max(0, input - cached - written)
