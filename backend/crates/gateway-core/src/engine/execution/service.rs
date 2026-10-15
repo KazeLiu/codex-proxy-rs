@@ -92,6 +92,7 @@ pub struct DefaultExecutionService {
     execution_extensions: Option<ExecutionExtensionIndex>,
     frontend_authentication: Option<FrontendAuthenticationExtensionIndex>,
     session_affinity: Option<Arc<dyn ProviderSessionAffinityPort>>,
+    client_retry: Option<Arc<dyn crate::engine::client_retry::ClientRetryStore>>,
     snapshot_refresh: Option<Arc<RuntimeSnapshotPublisher>>,
     active_requests: ActiveRequestRegistry,
 }
@@ -122,6 +123,7 @@ impl DefaultExecutionService {
             execution_extensions: None,
             frontend_authentication: None,
             session_affinity: None,
+            client_retry: None,
             snapshot_refresh: None,
             active_requests: Arc::default(),
         }
@@ -130,6 +132,15 @@ impl DefaultExecutionService {
     #[must_use]
     pub fn with_budget(mut self, budget: Arc<dyn ClientBudgetPort>) -> Self {
         self.budget = Some(budget);
+        self
+    }
+
+    #[must_use]
+    pub fn with_client_retry_store(
+        mut self,
+        store: Arc<dyn crate::engine::client_retry::ClientRetryStore>,
+    ) -> Self {
+        self.client_retry = Some(store);
         self
     }
 
@@ -829,8 +840,15 @@ impl DefaultExecutionService {
             started_at,
             deadline_at: authorization.deadline_at,
         };
-        let coordinator =
-            AttemptCoordinator::new(GatewayEngine::new(self.observations.clone(), providers));
+        let mut engine = GatewayEngine::new(self.observations.clone(), providers);
+        // 插件内部调用不共享外部客户端的失败轮次，探测另走 transient engine
+        if authorization.nested.is_none()
+            && authorization.bound.is_none()
+            && let Some(store) = &self.client_retry
+        {
+            engine = engine.with_client_retry_store(Arc::clone(store));
+        }
+        let coordinator = AttemptCoordinator::new(engine);
         let core = match coordinator
             .start_observed(
                 new_request,

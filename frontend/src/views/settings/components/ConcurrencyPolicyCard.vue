@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ZCard, ZForm, ZFormItem, ZIconButton, ZInput, ZPopover } from '@codex-proxy/ui'
 
-import { CircleAlert, Gauge, Timer } from '@lucide/vue'
+import { CircleAlert, Gauge } from '@lucide/vue'
 
 const maxConcurrentPerAccount = defineModel<string>('maxConcurrentPerAccount', { required: true })
-const requestIntervalMs = defineModel<string>('requestIntervalMs', { required: true })
 const maxWaitingPerKey = defineModel<string>('maxWaitingPerKey', { required: true })
 const maxWaitingPerAccount = defineModel<string>('maxWaitingPerAccount', { required: true })
 const concurrencyWaitTimeoutSeconds = defineModel<string>('concurrencyWaitTimeoutSeconds', { required: true })
@@ -32,23 +31,6 @@ const openaiGuardianReservedConcurrency = defineModel<string>('openaiGuardianRes
         </ZInput>
       </ZFormItem>
 
-      <ZFormItem
-        label="最小请求间隔"
-        description="控制同一账号两次调度之间的最小等待时间"
-      >
-        <ZInput
-          v-model="requestIntervalMs"
-          aria-label="最小请求间隔（毫秒）"
-          type="number"
-        >
-          <template #prefix>
-            <Timer class="size-4" />
-          </template>
-          <template #suffix>
-            毫秒
-          </template>
-        </ZInput>
-      </ZFormItem>
       <ZFormItem label="密钥队列容量" description="每个客户端密钥允许等待的最大请求数，0 表示不排队">
         <ZInput v-model="maxWaitingPerKey" aria-label="密钥队列容量" type="number" min="0" max="1000" step="1" />
       </ZFormItem>
@@ -68,7 +50,7 @@ const openaiGuardianReservedConcurrency = defineModel<string>('openaiGuardianRes
             </template>
             <div class="max-w-72 space-y-2 px-3 py-2 text-cp-sm leading-relaxed text-cp-text-secondary">
               <p>仅对 OpenAI 账号生效，普通并发为 10、审批名额为 3 时，两类请求分别最多运行 10 个和 3 个，互不占用名额</p>
-              <p>开启独立额度后，审批请求单独排队，可超过账号队列容量，仍受总等待容量、排队超时、请求间隔与密钥限额约束</p>
+              <p>开启独立额度后，审批请求单独排队，可超过账号队列容量，仍受总等待容量、排队超时与密钥限额约束</p>
             </div>
           </ZPopover>
         </template>

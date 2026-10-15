@@ -30,7 +30,7 @@ const providerOptions = computed(() => props.providers.map(value => ({
 <template>
   <div class="mb-3 shrink-0">
     <div class="flex flex-wrap items-center gap-2">
-      <ZInput v-model="search" class="w-full sm:w-72" placeholder="搜索模型…" aria-label="搜索模型 ID">
+      <ZInput v-model="search" class="w-full sm:w-72" placeholder="搜索模型" aria-label="搜索模型 ID">
         <template #prefix>
           <Search class="size-4" />
         </template>

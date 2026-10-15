@@ -36,7 +36,6 @@ export function useSettingsForm() {
     openaiAccountAffinity: '' as AccountAffinity | '',
     maxAccountRotations: null as number | null,
     openaiSessionAffinityTtlHours: null as number | null,
-    requestIntervalMs: null as number | null,
     maxWaitingPerKey: null as number | null,
     maxWaitingPerAccount: null as number | null,
     concurrencyWaitTimeoutSeconds: null as number | null,
@@ -77,7 +76,7 @@ export function useSettingsForm() {
     mappings.value = initial.mappings
   }
 
-  function numericModel(key: 'refreshMarginSeconds' | 'refreshConcurrency' | 'maxConcurrentPerAccount' | 'openaiGuardianReservedConcurrency' | 'maxAccountRotations' | 'openaiSessionAffinityTtlHours' | 'requestIntervalMs' | 'maxWaitingPerKey' | 'maxWaitingPerAccount' | 'concurrencyWaitTimeoutSeconds' | 'responsesMaxDecompressedBodyMiB' | 'accountAutoFreezeThreshold' | 'accountAutoFreezeWindowSeconds' | 'accountAutoFreezeDurationSeconds') {
+  function numericModel(key: 'refreshMarginSeconds' | 'refreshConcurrency' | 'maxConcurrentPerAccount' | 'openaiGuardianReservedConcurrency' | 'maxAccountRotations' | 'openaiSessionAffinityTtlHours' | 'maxWaitingPerKey' | 'maxWaitingPerAccount' | 'concurrencyWaitTimeoutSeconds' | 'responsesMaxDecompressedBodyMiB' | 'accountAutoFreezeThreshold' | 'accountAutoFreezeWindowSeconds' | 'accountAutoFreezeDurationSeconds') {
     return computed({
       get: () => (form[key] === null ? '' : String(form[key])),
       set: (value: string) => {
@@ -97,7 +96,6 @@ export function useSettingsForm() {
   const openaiGuardianReservedConcurrencyValue = numericModel('openaiGuardianReservedConcurrency')
   const maxAccountRotationsValue = numericModel('maxAccountRotations')
   const openaiSessionAffinityTtlHoursValue = numericModel('openaiSessionAffinityTtlHours')
-  const requestIntervalMsValue = numericModel('requestIntervalMs')
   const maxWaitingPerKeyValue = numericModel('maxWaitingPerKey')
   const maxWaitingPerAccountValue = numericModel('maxWaitingPerAccount')
   const responsesMaxDecompressedBodyMiBValue = numericModel('responsesMaxDecompressedBodyMiB')
@@ -126,7 +124,6 @@ export function useSettingsForm() {
     form.openaiAccountAffinity = data.openaiAccountAffinity
     form.maxAccountRotations = data.maxAccountRotations
     form.openaiSessionAffinityTtlHours = data.openaiSessionAffinityTtlHours
-    form.requestIntervalMs = data.requestIntervalMs
     form.maxWaitingPerKey = data.maxWaitingPerKey
     form.maxWaitingPerAccount = data.maxWaitingPerAccount
     form.concurrencyWaitTimeoutSeconds = data.concurrencyWaitTimeoutSeconds
@@ -211,8 +208,8 @@ export function useSettingsForm() {
     const savedSettings = saved.value
     if (saving.value || loading.value || !savedSettings)
       return
-    const { refreshMarginSeconds, refreshConcurrency, maxConcurrentPerAccount, openaiGuardianReservedConcurrency, openaiAccountAffinity, maxAccountRotations, openaiSessionAffinityTtlHours, requestIntervalMs, rotationStrategy, maxWaitingPerKey, maxWaitingPerAccount, concurrencyWaitTimeoutSeconds, responsesMaxDecompressedBodyMiB, accountAutoFreezeThreshold, accountAutoFreezeWindowSeconds, accountAutoFreezeDurationSeconds } = form
-    if (!openaiAccountAffinity || maxAccountRotations === null || openaiSessionAffinityTtlHours === null || refreshMarginSeconds === null || refreshConcurrency === null || maxConcurrentPerAccount === null || openaiGuardianReservedConcurrency === null || requestIntervalMs === null || !rotationStrategy || maxWaitingPerKey === null || maxWaitingPerAccount === null || concurrencyWaitTimeoutSeconds === null) {
+    const { refreshMarginSeconds, refreshConcurrency, maxConcurrentPerAccount, openaiGuardianReservedConcurrency, openaiAccountAffinity, maxAccountRotations, openaiSessionAffinityTtlHours, rotationStrategy, maxWaitingPerKey, maxWaitingPerAccount, concurrencyWaitTimeoutSeconds, responsesMaxDecompressedBodyMiB, accountAutoFreezeThreshold, accountAutoFreezeWindowSeconds, accountAutoFreezeDurationSeconds } = form
+    if (!openaiAccountAffinity || maxAccountRotations === null || openaiSessionAffinityTtlHours === null || refreshMarginSeconds === null || refreshConcurrency === null || maxConcurrentPerAccount === null || openaiGuardianReservedConcurrency === null || !rotationStrategy || maxWaitingPerKey === null || maxWaitingPerAccount === null || concurrencyWaitTimeoutSeconds === null) {
       ZNotification.warning({ message: '请完整填写并发、队列、凭据刷新参数和调度策略' })
       return
     }
@@ -303,7 +300,6 @@ export function useSettingsForm() {
         openaiAccountAffinity,
         maxAccountRotations,
         openaiSessionAffinityTtlHours,
-        requestIntervalMs,
         maxWaitingPerKey,
         maxWaitingPerAccount,
         concurrencyWaitTimeoutSeconds,
@@ -354,7 +350,6 @@ export function useSettingsForm() {
     openaiGuardianReservedConcurrencyValue,
     maxAccountRotationsValue,
     openaiSessionAffinityTtlHoursValue,
-    requestIntervalMsValue,
     maxWaitingPerKeyValue,
     maxWaitingPerAccountValue,
     concurrencyWaitTimeoutSecondsValue,

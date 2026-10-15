@@ -1,4 +1,5 @@
-import type { PrivacyAction, PrivacyRule, PrivacySample, PrivacyScope } from '@/api/modules/settings/privacy'
+import type { PrivacyAction, PrivacyRule, PrivacySample, PrivacyScope, PrivacyStep } from '@/api/modules/settings/privacy'
+import { cloneDeep } from 'es-toolkit'
 
 export const scopes: { value: PrivacyScope, label: string }[] = [
   { value: 'turn_metadata', label: '工作区附加信息' },
@@ -31,22 +32,46 @@ export const fieldsByScope: Partial<Record<PrivacyScope, { value: string, label:
   ],
 }
 
-export function newRule(): PrivacyRule {
-  return { id: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''), name: '', enabled: false, scope: 'turn_metadata', selector: '$.workspaces.*.associated_remote_urls.*', action: 'regex_replace', pattern: '', replacement: '', value: '', replaceAll: true, caseInsensitive: false, multiLine: false }
+export function newStep(): PrivacyStep {
+  return { scope: 'turn_metadata', selector: '$.workspaces.*.associated_remote_urls.*', action: 'regex_replace', pattern: '', replacement: '', value: '', replaceAll: true, caseInsensitive: false, multiLine: false }
 }
 
-export const presets: { name: string, values: Partial<PrivacyRule> }[] = [
-  { name: '工作区仓库地址脱敏', values: { scope: 'turn_metadata', selector: '$.workspaces.*.associated_remote_urls.*', action: 'regex_replace', pattern: '(?s)^.+$', replacement: '[REDACTED]' } },
-  { name: '工作区用户名替换', values: { scope: 'turn_metadata', selector: '$.workspaces', action: 'rename_key', pattern: String.raw`(?i)^((?:[a-z]:)?[/\\](?:home|users)[/\\])[^/\\]+`, replacement: `\${1}user` } },
-  { name: '移除工作区提交标识', values: { scope: 'turn_metadata', selector: '$.workspaces.*.latest_git_commit_hash', action: 'remove_field', pattern: null } },
-  // Desktop Git 的这些字段可能为 null，按字段移除，避免正则因类型不匹配撤销整条规则
-  // remotes 本身也可能为 null，预设处理整个远端集合，单个地址仍可从常用字段选择
-  { name: '移除 Desktop Git 远端', values: { scope: 'desktop_git_context', selector: '$.remotes', action: 'remove_field', pattern: null } },
-  { name: '移除 Desktop 提交标识', values: { scope: 'desktop_git_context', selector: '$.headCommitSha', action: 'remove_field', pattern: null } },
-  { name: '移除 Desktop 工作区指纹', values: { scope: 'desktop_git_context', selector: '$.worktreeId', action: 'remove_field', pattern: null } },
-  { name: '移除 Desktop 应用版本', values: { scope: 'desktop_git_context', selector: '$.appVersion', action: 'remove_field', pattern: null } },
-  { name: '移除 Desktop Core 版本', values: { scope: 'desktop_git_context', selector: '$.appServerVersion', action: 'remove_field', pattern: null } },
+export function newRule(): PrivacyRule {
+  return { id: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''), name: '', enabled: false, steps: [newStep()] }
+}
+
+export const presets: { key: string, name: string, steps: Partial<PrivacyStep>[] }[] = [
+  {
+    key: 'workspace',
+    name: '统一工作区信息',
+    steps: [
+      { scope: 'turn_metadata', selector: '$.workspaces', action: 'rename_key', pattern: String.raw`(?i)^((?:[a-z]:)?[/\\](?:home|users)[/\\])[^/\\]+`, replacement: `\${1}user` },
+      { scope: 'environment_text', selector: '$', action: 'regex_replace', pattern: String.raw`(?i)((?:[a-z]:)?[/\\](?:home|users)[/\\])[^/\\<>"'\r\n]+`, replacement: `\${1}user` },
+      // 项目名取自原路径，不固定到预设样本中的项目
+      { scope: 'turn_metadata', selector: '$.workspaces', action: 'rename_key', pattern: String.raw`(?s)^(?:[a-zA-Z]:)?[/\\](?:.*[/\\])?([^/\\]+)[/\\]*$`, replacement: `/workspace/\${1}` },
+      { scope: 'environment_text', selector: '$', action: 'regex_replace', pattern: String.raw`(<cwd>\s*)(?:[a-zA-Z]:)?[/\\](?:[^<>\r\n]*[/\\])?([^/\\<>\r\n]+?)[/\\]*\s*(</cwd>)`, replacement: `\${1}/workspace/\${2}\${3}` },
+      { scope: 'turn_metadata', selector: '$.workspaces.*.associated_remote_urls.*', action: 'set_value', pattern: null, value: 'https://example.invalid/repo.git' },
+      { scope: 'turn_metadata', selector: '$.workspaces.*.latest_git_commit_hash', action: 'set_value', pattern: null, value: '0'.repeat(40) },
+    ],
+  },
+  {
+    key: 'desktop',
+    name: '统一 Desktop 信息',
+    steps: [
+      // 统一整个远端集合，避免远端数量、名称和可空 URL 继续暴露差异
+      { scope: 'desktop_git_context', selector: '$.remotes', action: 'set_value', pattern: null, value: [{ name: 'origin', fetchUrl: 'https://example.invalid/repo.git' }] },
+      { scope: 'desktop_git_context', selector: '$.headCommitSha', action: 'set_value', pattern: null, value: '0'.repeat(40) },
+      { scope: 'desktop_git_context', selector: '$.worktreeId', action: 'set_value', pattern: null, value: '0'.repeat(40) },
+      { scope: 'desktop_git_context', selector: '$.appVersion', action: 'set_value', pattern: null, value: '0.0.0' },
+      { scope: 'desktop_git_context', selector: '$.appServerVersion', action: 'set_value', pattern: null, value: '0.0.0' },
+    ],
+  },
 ]
+
+export function createPreset(key: string): PrivacyRule {
+  const preset = presets.find(item => item.key === key)!
+  return { ...newRule(), name: preset.name, steps: preset.steps.map(step => ({ ...newStep(), ...cloneDeep(step) })) }
+}
 
 // 样本使用虚构仓库、路径与标识，字段形状对应官方 Core 和 Desktop Git 上下文
 const metadata = { workspaces: { '/home/alex/projects/demo': { associated_remote_urls: { origin: 'https://git.example.invalid/private-org/repo.git', public: 'git@git.example.invalid:public/repo.git' }, latest_git_commit_hash: 'a'.repeat(40), has_changes: true } }, request_kind: 'turn' }
@@ -83,38 +108,7 @@ function contextMessage(text: string) {
   return { role: 'user', content: [{ type: 'input_text', text }] }
 }
 
-export function sampleText(scope: PrivacyScope): string {
-  if (scope === 'turn_metadata')
-    return JSON.stringify(metadata, null, 2)
-  if (scope === 'desktop_git_context')
-    return JSON.stringify(desktopGit, null, 2)
-  if (scope === 'environment_text')
-    return '<environment_context>\n<cwd>/home/alex/projects/demo</cwd>\n<timezone>Asia/Shanghai</timezone>\n</environment_context>'
-  if (scope === 'request_header')
-    return 'example-client'
-  return JSON.stringify({ metadata: { workspace: '/home/alex/projects/demo' } }, null, 2)
-}
-
-export function makeSample(scope: PrivacyScope, text: string, selector = ''): PrivacySample {
-  const sample: PrivacySample = { body: {}, headers: {}, turnMetadata: null }
-  if (scope === 'turn_metadata') {
-    sample.turnMetadata = JSON.stringify(JSON.parse(text))
-  }
-  else if (scope === 'request_header') {
-    sample.headers[selector] = [text]
-  }
-  else if (scope === 'request_body') {
-    sample.body = JSON.parse(text)
-  }
-  else {
-    const context = scope === 'desktop_git_context'
-      ? desktopContext(JSON.parse(text))
-      : text
-    sample.body = { input: [contextMessage(context)] }
-  }
-  return sample
-}
-
 export function exampleRequest(): PrivacySample {
-  return { body: { input: [contextMessage(desktopContext(desktopGit))], client_metadata: { 'x-codex-turn-metadata': JSON.stringify(metadata) } }, headers: { 'x-codex-turn-metadata': [JSON.stringify(metadata)] }, turnMetadata: null }
+  const environment = '<environment_context>\n<cwd>/home/alex/projects/demo</cwd>\n<filesystem><workspace_roots><root>/home/alex/projects/demo</root></workspace_roots></filesystem>\n<timezone>Asia/Shanghai</timezone>\n</environment_context>'
+  return { body: { input: [contextMessage(environment), contextMessage(desktopContext(desktopGit))], client_metadata: { 'x-codex-turn-metadata': JSON.stringify(metadata) } }, headers: { 'x-codex-turn-metadata': [JSON.stringify(metadata)] }, turnMetadata: null }
 }

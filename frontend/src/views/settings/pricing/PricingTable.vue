@@ -24,7 +24,7 @@ function summaryBand(row: PricingRow) {
 </script>
 
 <template>
-  <ZTable :columns="columns" :data="rows" row-key="model" :loading="loading" :selected-row-keys="selected" empty-text="没有匹配的模型" show-header-when-empty>
+  <ZTable class="[--cp-table-row-height:50px]" :columns="columns" :data="rows" row-key="model" :loading="loading" :selected-row-keys="selected" empty-text="没有匹配的模型" show-header-when-empty>
     <template v-if="$slots.empty" #empty>
       <slot name="empty" />
     </template>

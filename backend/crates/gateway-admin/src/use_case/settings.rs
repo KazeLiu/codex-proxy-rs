@@ -260,10 +260,12 @@ impl SettingsService for DefaultSettingsService {
             PricingChange::Replace(pricing) => {
                 pricing.validate().map_err(AdminError::invalid)?;
                 if command.provider == "xai"
-                    && pricing
-                        .bands
-                        .keys()
-                        .any(|band| matches!(band.as_str(), "image" | "flex" | "long_flex"))
+                    && pricing.bands.keys().any(|band| {
+                        matches!(
+                            band.as_str(),
+                            "image" | "flex" | "long_flex" | "ultrafast" | "long_ultrafast"
+                        )
+                    })
                 {
                     return Err(AdminError::invalid("xAI 不支持此价格档位"));
                 }

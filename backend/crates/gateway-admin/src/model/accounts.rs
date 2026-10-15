@@ -124,6 +124,7 @@ pub struct AccountRecord {
     pub weight: AccountWeight,
     pub model_access: gateway_core::account::AccountModelAccess,
     pub outbound_proxy: Option<gateway_core::account::OutboundProxy>,
+    pub outbound_proxy_enabled: bool,
     pub credential_state: CredentialState,
     pub credential_observed_at: DateTime<Utc>,
     pub quota: QuotaState,
@@ -131,6 +132,16 @@ pub struct AccountRecord {
     pub last_error_message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl AccountRecord {
+    /// 配置保留绑定，执行请求时禁用代理按直连处理
+    #[must_use]
+    pub fn effective_outbound_proxy(&self) -> Option<&gateway_core::account::OutboundProxy> {
+        self.outbound_proxy
+            .as_ref()
+            .filter(|_| self.outbound_proxy_enabled)
+    }
 }
 
 pub use super::observability::{

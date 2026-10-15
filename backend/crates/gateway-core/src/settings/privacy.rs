@@ -56,6 +56,12 @@ pub struct PrivacyRule {
     pub id: String,
     pub name: String,
     pub enabled: bool,
+    pub steps: Vec<PrivacyStep>,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PrivacyStep {
     pub scope: PrivacyScope,
     pub selector: String,
     pub action: PrivacyAction,
@@ -71,9 +77,17 @@ pub struct PrivacyRule {
 impl fmt::Debug for PrivacyRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PrivacyRule")
+            .field("enabled", &self.enabled)
+            .field("step_count", &self.steps.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for PrivacyStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PrivacyStep")
             .field("scope", &self.scope)
             .field("action", &self.action)
-            .field("enabled", &self.enabled)
             .finish_non_exhaustive()
     }
 }

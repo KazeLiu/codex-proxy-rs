@@ -32,6 +32,11 @@ export function useProxies() {
   const pendingDelete = shallowRef<OutboundProxyRecord | null>(null)
   const testing = useIdSet<string>()
   const testingIds = testing.ids
+  const updating = useIdSet<string>()
+  const updatingIds = updating.ids
+  const showDisable = shallowRef(false)
+  const pendingDisable = shallowRef<OutboundProxyRecord | null>(null)
+  const disabling = computed(() => pendingDisable.value !== null && updating.has(pendingDisable.value.id))
   const formTestAction = useAsyncAction()
   const testingForm = computed(() => formTestAction.loading.value || (editing.value !== null && testingIds.value.has(editing.value.id)))
   const detectingLocation = shallowRef(false)
@@ -189,6 +194,37 @@ export function useProxies() {
     showDelete.value = true
   }
 
+  async function setEnabled(proxy: OutboundProxyRecord, enabled: boolean) {
+    if (updating.has(proxy.id) || testing.has(proxy.id))
+      return
+    updating.add(proxy.id)
+    try {
+      await updateProxy({ id: proxy.id, revision: proxy.revision, name: proxy.name, enabled })
+      showDisable.value = false
+      ZNotification.success({ message: enabled ? '代理已启用' : '代理已禁用，关联账号已改为直连' })
+    }
+    catch {}
+    finally {
+      updating.remove(proxy.id)
+      await query.execute({ silent: true })
+    }
+  }
+
+  function toggleEnabled(proxy: OutboundProxyRecord) {
+    if (proxy.enabled) {
+      pendingDisable.value = proxy
+      showDisable.value = true
+    }
+    else {
+      void setEnabled(proxy, true)
+    }
+  }
+
+  async function confirmDisable() {
+    if (pendingDisable.value)
+      await setEnabled(pendingDisable.value, false)
+  }
+
   async function confirmDelete() {
     const proxy = pendingDelete.value
     if (!proxy || deleting.value)
@@ -242,6 +278,12 @@ export function useProxies() {
     pendingDelete,
     deleting,
     testingIds,
+    updatingIds,
+    showDisable,
+    pendingDisable,
+    disabling,
+    toggleEnabled,
+    confirmDisable,
     testingConnection,
     detectingLocation,
     openForm,

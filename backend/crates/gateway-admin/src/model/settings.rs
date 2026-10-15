@@ -51,7 +51,6 @@ pub struct RuntimeSettingsValues {
     pub refresh_margin_seconds: u64,
     pub refresh_concurrency: u32,
     pub max_concurrent_per_account: u32,
-    pub request_interval_ms: u64,
     pub max_waiting_per_key: u32,
     pub max_waiting_per_account: u32,
     pub concurrency_wait_timeout_seconds: u32,
@@ -212,10 +211,6 @@ impl RuntimeSettingsValues {
                 "refresh_margin_seconds",
             ),
             (self.refresh_concurrency > 0, "refresh_concurrency"),
-            (
-                i64::try_from(self.request_interval_ms).is_ok(),
-                "request_interval_ms",
-            ),
         ] {
             if !valid {
                 return Err(field);

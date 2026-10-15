@@ -23,7 +23,7 @@ import { useAccountOnboarding } from './useAccountOnboarding'
 export function useAccountMutations(options: {
   accounts: Ref<Account[]>
   selectedIds: Ref<Set<string>>
-  onImportTaskCreated: (task: AccountImportTask) => void
+  onImportTaskCreated: (task: AccountImportTask, reveal?: boolean) => void
   reload: () => Promise<unknown>
   replaceAccount: (account: Account) => Promise<boolean>
 }) {

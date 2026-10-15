@@ -513,6 +513,8 @@ impl ModelRequestRepository for PgExecutionStore {
         attempt: ModelRequestAttemptStart,
     ) -> StoreResult<u32> {
         attempt.validate()?;
+        // 重试资格由 Core 的重放屏障裁决，已交付前导事件或心跳不代表禁止新 attempt
+        // 观测存储只校验运行态与连续序号，保留首次交付时间和客户端状态
         // upstream_send_state 是请求级单调水位（sent > ambiguous > not_sent），
         // 由 mark/finalize 抬升；开启新 attempt 不得把已持久化的 sent 重置回
         // not_sent——崩溃恢复的终态写回会原样继承本列
@@ -539,7 +541,7 @@ impl ModelRequestRepository for PgExecutionStore {
                      'capacityUsedSlots', coalesce($10::bigint, observed.used_slots),
                      'capacityTotalSlots', coalesce($11::bigint, observed.total_slots))))
              from observed
-             where model_requests.id = observed.id and outcome = 'running' and downstream_committed_at is null
+             where model_requests.id = observed.id and outcome = 'running'
                and $8 = attempt_count + 1
              returning attempt_count",
         )
@@ -573,7 +575,7 @@ impl ModelRequestRepository for PgExecutionStore {
             source: None,
             entity: ENTITY,
             id: attempt.model_request_id,
-            kind: ConflictKind::DownstreamAlreadyCommitted,
+            kind: ConflictKind::InvalidTransition,
         })?;
         u32::try_from(count)
             .map_err(|source| invalid("attempt_count is invalid").with_source(source))

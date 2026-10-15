@@ -82,6 +82,7 @@ fn contract_type(mut item: Item, name: &str) -> Item {
                     | "RegeneratedAdminApiKey"
                     | "CodexPrivacyPolicy"
                     | "PrivacyRule"
+                    | "PrivacyStep"
                     | "PrivacyPreviewRequest"
                     | "PrivacyPreviewResult"
             );
@@ -137,6 +138,7 @@ fn sdk_settings_contract_matches_host_declarations() {
                 "PrivacyScope",
                 "PrivacyAction",
                 "PrivacyRule",
+                "PrivacyStep",
                 "PrivacyRuleOutcome",
                 "PrivacyPreviewRequest",
                 "PrivacyPreviewResult",

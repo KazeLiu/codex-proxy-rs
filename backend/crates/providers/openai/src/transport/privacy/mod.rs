@@ -1,18 +1,15 @@
 //! OpenAI 隐私规则的统一编译与执行，供设置预览和实际出站共享
 
 mod carrier;
+mod changes;
 mod rule;
 mod selector;
 
-use std::{
-    collections::BTreeSet,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeSet, sync::Arc};
 
 use gateway_core::settings::privacy::{
     CodexPrivacyPolicy, CompiledPrivacyPolicy, PrivacyError, PrivacyFailureMode,
-    PrivacyPreviewRequest, PrivacyPreviewResult, PrivacyRuleOutcome,
+    PrivacyPreviewRequest, PrivacyPreviewResult, PrivacyRuleOutcome, PrivacyScope,
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
@@ -24,7 +21,13 @@ const MAX_PREVIEW_BYTES: usize = 256 * 1024;
 struct Policy {
     enabled: bool,
     failure: PrivacyFailureMode,
-    rules: Vec<rule::CompiledRule>,
+    rules: Vec<CompiledRule>,
+}
+
+struct CompiledRule {
+    id: String,
+    enabled: bool,
+    steps: Vec<rule::CompiledStep>,
 }
 
 impl std::fmt::Debug for Policy {
@@ -36,7 +39,6 @@ impl std::fmt::Debug for Policy {
 }
 
 struct Budget<'a> {
-    started: Instant,
     steps: usize,
     text_bytes: usize,
     cancelled: &'a dyn Fn() -> bool,
@@ -48,8 +50,8 @@ impl Budget<'_> {
         if (self.cancelled)() {
             return Err("请求已取消或超时");
         }
-        if self.steps > 10_000 || self.started.elapsed() > Duration::from_millis(100) {
-            return Err("规则执行预算超限");
+        if self.steps > 10_000 {
+            return Err("规则执行步数超限");
         }
         Ok(())
     }
@@ -74,18 +76,46 @@ pub fn compile(
         });
     }
     let mut ids = BTreeSet::new();
+    let mut step_count = 0;
     let rules = policy
         .rules
         .iter()
         .enumerate()
         .map(|(rule_index, rule)| {
+            if rule.id.is_empty()
+                || rule.id.len() > 64
+                || rule.name.is_empty()
+                || rule.name.len() > 192
+            {
+                return Err(PrivacyError {
+                    rule_index,
+                    reason: "规则 ID 或名称长度不合法",
+                });
+            }
             if !ids.insert(&rule.id) {
                 return Err(PrivacyError {
                     rule_index,
                     reason: "规则 ID 重复",
                 });
             }
-            rule::CompiledRule::compile(rule).map_err(|reason| PrivacyError { rule_index, reason })
+            step_count += rule.steps.len();
+            if rule.steps.is_empty() || step_count > 32 {
+                return Err(PrivacyError {
+                    rule_index,
+                    reason: "每条规则至少一个处理步骤，所有规则合计最多 32 个步骤",
+                });
+            }
+            let steps = rule
+                .steps
+                .iter()
+                .map(rule::CompiledStep::compile)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|reason| PrivacyError { rule_index, reason })?;
+            Ok(CompiledRule {
+                id: rule.id.clone(),
+                enabled: rule.enabled,
+                steps,
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Arc::new(Policy {
@@ -105,38 +135,56 @@ impl CompiledPrivacyPolicy for Policy {
     ) -> Result<Vec<PrivacyRuleOutcome>, PrivacyError> {
         let mut outcomes = Vec::new();
         let mut budget = Budget {
-            started: Instant::now(),
             steps: 0,
             text_bytes: 0,
             cancelled,
         };
+        let mut body_size = None;
+        let mut contexts = carrier::ContextIndex::default();
         for (rule_index, rule) in self.rules.iter().enumerate() {
             let mut outcome = PrivacyRuleOutcome {
-                rule_id: rule.rule.id.clone(),
+                rule_id: rule.id.clone(),
                 matches: 0,
                 status: "disabled".to_owned(),
                 reason: None,
             };
-            if self.enabled && rule.rule.enabled {
-                // 一条规则的所有承载副本同成同败，失败不会留下部分改写
+            if self.enabled && rule.enabled {
+                // 一条规则的所有步骤与承载副本同成同败，失败不会留下部分改写
                 let result = (|| {
                     budget.step()?;
-                    check_size(body, MAX_REQUEST_BYTES)?;
-                    let mut next_body = body.clone();
+                    let original_size =
+                        *body_size.get_or_insert_with(|| encoded_size(body, MAX_REQUEST_BYTES));
+                    let original_size = original_size?;
                     let mut next_headers = headers.clone();
                     let mut next_metadata = turn_metadata.clone();
-                    let count = carrier::apply(
-                        rule,
-                        &mut next_body,
-                        &mut next_headers,
-                        &mut next_metadata,
-                        &mut budget,
-                    )?;
-                    check_size(&next_body, MAX_REQUEST_BYTES)?;
+                    let mut transaction = changes::BodyTransaction::new(body);
+                    let mut next_size = original_size;
+                    let mut count = 0;
+                    for step in &rule.steps {
+                        budget.step()?;
+                        let mut changes = changes::BodyChanges::new(next_size);
+                        let matches = carrier::prepare(
+                            step,
+                            transaction.body,
+                            &mut next_headers,
+                            &mut next_metadata,
+                            &mut changes,
+                            &mut contexts,
+                            &mut budget,
+                        )?;
+                        next_size = changes.size()?;
+                        budget.step()?;
+                        changes.commit(&mut transaction);
+                        count += matches;
+                        if matches > 0 && step.rule.scope == PrivacyScope::RequestBody {
+                            contexts = carrier::ContextIndex::default();
+                        }
+                    }
                     budget.step()?;
-                    *body = next_body;
+                    transaction.finish();
                     *headers = next_headers;
                     *turn_metadata = next_metadata;
+                    body_size = Some(Ok(next_size));
                     Ok(count)
                 })();
                 match result {
@@ -146,6 +194,8 @@ impl CompiledPrivacyPolicy for Policy {
                             if count == 0 { "unmatched" } else { "applied" }.to_owned();
                     }
                     Err(reason) => {
+                        // 索引可能来自已回滚的中间正文，不能复用到下一条规则
+                        contexts = carrier::ContextIndex::default();
                         if self.failure == PrivacyFailureMode::RejectRequest || cancelled() {
                             return Err(PrivacyError { rule_index, reason });
                         }
@@ -223,6 +273,10 @@ pub fn preview(request: PrivacyPreviewRequest) -> Result<PrivacyPreviewResult, P
 }
 
 fn check_size(value: &Value, limit: usize) -> Result<(), &'static str> {
+    encoded_size(value, limit).map(|_| ())
+}
+
+fn encoded_size(value: &Value, limit: usize) -> Result<usize, &'static str> {
     struct Counter(usize);
     impl std::io::Write for Counter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -236,7 +290,9 @@ fn check_size(value: &Value, limit: usize) -> Result<(), &'static str> {
             Ok(())
         }
     }
-    serde_json::to_writer(Counter(limit), value).map_err(|_| "请求或预览样本超出大小限制")
+    let mut counter = Counter(limit);
+    serde_json::to_writer(&mut counter, value).map_err(|_| "请求或预览样本超出大小限制")?;
+    Ok(limit - counter.0)
 }
 
 impl super::client::CodexBackendClient {

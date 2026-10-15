@@ -1,5 +1,8 @@
 //! 隐私规则的多承载一致性、自由字段配置、条件删除与有界失败合同
 
+mod changes;
+mod steps;
+
 use gateway_core::settings::privacy::*;
 use provider_openai::transport::privacy::{compile, preview};
 use serde_json::{Value, json};
@@ -9,6 +12,12 @@ pub(crate) fn rule(scope: PrivacyScope, selector: &str, action: PrivacyAction) -
         id: "rule-1".into(),
         name: "测试规则".into(),
         enabled: true,
+        steps: vec![step(scope, selector, action)],
+    }
+}
+
+fn step(scope: PrivacyScope, selector: &str, action: PrivacyAction) -> PrivacyStep {
+    PrivacyStep {
         scope,
         selector: selector.into(),
         action,
@@ -92,15 +101,15 @@ fn privacy_conditionally_deletes_values_and_renames_path_keys_in_sequence() {
         "$.workspaces.*.associated_remote_urls.*",
         PrivacyAction::RemoveField,
     );
-    remove.pattern = Some("/private-org/".into());
+    remove.steps[0].pattern = Some("/private-org/".into());
     let mut rename = rule(
         PrivacyScope::RequestBody,
         "$.workspaces",
         PrivacyAction::RenameKey,
     );
     rename.id = "rename".into();
-    rename.pattern = Some("^/home/[^/]+/(.*)$".into());
-    rename.replacement = "/workspace/${1}".into();
+    rename.steps[0].pattern = Some("^/home/[^/]+/(.*)$".into());
+    rename.steps[0].replacement = "/workspace/${1}".into();
     let output = preview(sample(vec![remove, rename], json!({"workspaces":{
         "/home/alex/demo":{"associated_remote_urls":{"origin":"https://host/private-org/demo","upstream":"https://host/public/demo"}}
     }}))).unwrap();
@@ -113,7 +122,7 @@ fn privacy_conditionally_deletes_values_and_renames_path_keys_in_sequence() {
         "$.remotes[*]",
         PrivacyAction::RemoveField,
     );
-    remove.pattern = Some("private".into());
+    remove.steps[0].pattern = Some("private".into());
     assert_eq!(
         preview(sample(
             vec![remove],
@@ -176,11 +185,11 @@ fn privacy_rolls_back_all_copies_of_a_failed_rule_and_continues_in_order() {
         "$.workspace",
         PrivacyAction::RegexReplace,
     );
-    first.pattern = Some("private".into());
-    first.replacement = "public".into();
+    first.steps[0].pattern = Some("private".into());
+    first.steps[0].replacement = "public".into();
     let mut second = rule(PrivacyScope::RequestBody, "$.keep", PrivacyAction::SetValue);
     second.id = "second".into();
-    second.value = json!("done");
+    second.steps[0].value = json!("done");
     let body = json!({"turnMetadata":{"workspace":"private"},"client_metadata":{"turnMetadata":{"workspace":42}},"keep":"start"});
     let mut request = sample(vec![first.clone(), second], body.clone());
     request.policy.on_error = PrivacyFailureMode::SkipRule;
@@ -202,8 +211,8 @@ fn privacy_key_collisions_fail_without_losing_values() {
         "$.workspaces",
         PrivacyAction::RenameKey,
     );
-    rename.pattern = Some(".+".into());
-    rename.replacement = "same".into();
+    rename.steps[0].pattern = Some(".+".into());
+    rename.steps[0].replacement = "same".into();
     let body = json!({"workspaces":{"first":1,"second":2}});
     let mut request = sample(vec![rename], body.clone());
     request.policy.on_error = PrivacyFailureMode::SkipRule;
@@ -235,11 +244,11 @@ fn privacy_desktop_context_is_classified_and_reencoded_without_touching_prose() 
             .contains("a &amp; b")
     );
     assert_eq!(output.body["input"][0]["content"][1]["text"], text);
-    replacement.scope = PrivacyScope::EnvironmentText;
-    replacement.selector = "$".into();
-    replacement.action = PrivacyAction::RegexReplace;
-    replacement.pattern = Some("Asia/Shanghai".into());
-    replacement.replacement = "UTC".into();
+    replacement.steps[0].scope = PrivacyScope::EnvironmentText;
+    replacement.steps[0].selector = "$".into();
+    replacement.steps[0].action = PrivacyAction::RegexReplace;
+    replacement.steps[0].pattern = Some("Asia/Shanghai".into());
+    replacement.steps[0].replacement = "UTC".into();
     let body = json!({"input":[{"role":"developer","content":[{"type":"input_text","text":"<codex_apps_client_time_context><timezone>Asia/Shanghai</timezone></codex_apps_client_time_context>"}]}]});
     assert!(
         preview(sample(vec![replacement], body))
@@ -257,18 +266,18 @@ fn privacy_validates_regex_paths_captures_and_execution_limits() {
         "$[\"a.b\"][0]",
         PrivacyAction::RegexReplace,
     );
-    replace.pattern = Some("(?P<word>a)".into());
-    replace.replacement = "${word}${1}$$".into();
+    replace.steps[0].pattern = Some("(?P<word>a)".into());
+    replace.steps[0].replacement = "${word}${1}$$".into();
     assert_eq!(
         preview(sample(vec![replace.clone()], json!({"a.b":["a"]})))
             .unwrap()
             .body,
         json!({"a.b":["aa$"]})
     );
-    replace.replacement = "${missing}".into();
+    replace.steps[0].replacement = "${missing}".into();
     assert!(compile(&policy(vec![replace.clone()])).is_err());
-    replace.replacement.clear();
-    replace.pattern = Some("(?<=a)b".into());
+    replace.steps[0].replacement.clear();
+    replace.steps[0].pattern = Some("(?<=a)b".into());
     assert!(compile(&policy(vec![replace])).is_err());
     for path in ["$..secret", "$[?(@.secret)]", "$['single']"] {
         assert!(
@@ -291,7 +300,7 @@ fn privacy_validates_regex_paths_captures_and_execution_limits() {
     let error = policy
         .apply(&mut body, &mut Default::default(), &mut None, &|| false)
         .unwrap_err();
-    assert_eq!(error.reason, "规则执行预算超限");
+    assert_eq!(error.reason, "规则执行步数超限");
     assert_eq!(body, original);
     assert!(
         policy
@@ -353,8 +362,8 @@ fn privacy_context_parser_handles_quoted_brackets_and_bounds_xml_depth() {
         "$",
         PrivacyAction::RegexReplace,
     );
-    replace.pattern = Some("value".into());
-    replace.replacement = "changed".into();
+    replace.steps[0].pattern = Some("value".into());
+    replace.steps[0].replacement = "changed".into();
     let body = json!({"input":[{"role":"user","content":[{"type":"input_text","text":nested}]}]});
     assert_eq!(
         preview(sample(vec![replace], body)).err().unwrap().reason,
@@ -369,7 +378,7 @@ fn privacy_reports_headers_that_websocket_opening_cannot_serialize() {
         "x-label",
         PrivacyAction::SetValue,
     );
-    replace.value = json!("别名");
+    replace.steps[0].value = json!("别名");
     let mut request = sample(vec![replace], json!({}));
     request
         .headers

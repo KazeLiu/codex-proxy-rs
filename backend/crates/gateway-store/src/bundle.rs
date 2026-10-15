@@ -126,6 +126,7 @@ async fn connect(
     let observability_query_budget = postgres::ObservabilityQueryBudget::try_new(
         config.pool.observability_max_connections(),
         config.pool.acquire_timeout(),
+        config.pool.observability_timeout(),
     )?;
     let redis_client = ::redis::Client::open(config.redis_url()?)
         .map_err(|source| redis_unavailable("create Redis client", source))?;
@@ -180,8 +181,11 @@ async fn connect(
             )),
             admin_account_runtime,
             Arc::new(
-                postgres::PgAccountGroupRepository::new(pool.clone())
-                    .with_timezone(config.timezone),
+                postgres::PgAccountGroupRepository::new(
+                    pool.clone(),
+                    observability_query_budget.clone(),
+                )
+                .with_timezone(config.timezone),
             ),
             Arc::new(postgres::PgProxyRepository::new(pool.clone())),
         ),
@@ -251,7 +255,11 @@ async fn connect(
     .with_budget(Arc::new(
         postgres::PgClientBudgetStore::new(pool.clone()).with_timezone(config.timezone),
     ))
-    .with_session_affinity(Arc::clone(&provider_session_affinity));
+    .with_session_affinity(Arc::clone(&provider_session_affinity))
+    .with_client_retry_store(Arc::new(redis::RedisClientRetryRepository::new(
+        redis_connection.clone(),
+        REDIS_NAMESPACE,
+    )?));
 
     let provider_ports = ProviderStorePorts::new(
         account_store,

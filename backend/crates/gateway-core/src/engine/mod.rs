@@ -3,6 +3,7 @@
 pub mod admission;
 pub mod authentication;
 pub mod budget;
+pub mod client_retry;
 pub mod connection;
 pub mod continuation;
 pub mod coordinator;
@@ -559,12 +560,10 @@ impl AttemptContext {
         self.request.client_transport
     }
 
-    /// 原生双向通道可提前交付可替换前导事件；中间件可能改变其输出语义
+    /// 原生响应可交付可替换前导事件；中间件可能改变其输出语义
     #[must_use]
     pub fn allows_replayable_prelude(&self) -> bool {
-        self.client_transport() == execution::ClientTransport::WebSocket
-            && self.request.middleware.is_none()
-            && self.response_control().is_some()
+        self.request.middleware.is_none()
     }
 
     #[must_use]
@@ -1123,12 +1122,26 @@ pub enum EngineError {
 pub struct GatewayEngine<S: ?Sized> {
     store: Arc<S>,
     providers: provider::ProviderRegistry,
+    client_retry: Option<Arc<dyn client_retry::ClientRetryStore>>,
 }
 
 impl<S: ?Sized> GatewayEngine<S> {
     #[must_use]
     pub const fn new(store: Arc<S>, providers: provider::ProviderRegistry) -> Self {
-        Self { store, providers }
+        Self {
+            store,
+            providers,
+            client_retry: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_client_retry_store(
+        mut self,
+        store: Arc<dyn client_retry::ClientRetryStore>,
+    ) -> Self {
+        self.client_retry = Some(store);
+        self
     }
 
     #[must_use]

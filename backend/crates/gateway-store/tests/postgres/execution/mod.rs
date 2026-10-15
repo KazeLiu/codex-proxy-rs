@@ -2244,6 +2244,119 @@ async fn shared_core_usage_and_timings_preserve_fields_and_reject_invalid_phases
 }
 
 #[tokio::test]
+async fn retry_after_transport_commit_preserves_delivery_facts_and_attempt_order() {
+    let Some(database) = TestDatabase::create("retry_after_commit").await else {
+        return;
+    };
+    let store = PgExecutionStore::new(database.pool.clone());
+    for (transport, status) in [("websocket", None), ("http_sse", Some(200))] {
+        let id = format!("req_retry_after_{transport}_commit");
+        let mut request = accepted_request(&id);
+        request.client_transport = transport.to_owned();
+        store.create_model_request(request).await.unwrap();
+        let mut attempt = ModelRequestAttemptStart {
+            model_request_id: id.clone(),
+            attempt_count: 1,
+            provider_kind: "openai".to_owned(),
+            account_snapshot: None,
+            provider_account_ref: Some("account_before_retry".to_owned()),
+            upstream_model_id: Some("model".to_owned()),
+            upstream_transport: "websocket".to_owned(),
+            http_version: Some("HTTP/1.1".to_owned()),
+            account_selection_wait_ms: Some(5),
+            capacity_used_slots: Some(1),
+            capacity_total_slots: Some(10),
+        };
+        store
+            .begin_model_request_attempt(attempt.clone())
+            .await
+            .unwrap();
+        store
+            .mark_upstream_send_state(&id, gateway_store::postgres::UpstreamSendState::Sent)
+            .await
+            .unwrap();
+        // 可重放的 WS 前导事件或 HTTP 心跳先交付，不能替代 Core 的业务重放屏障
+        let committed_at = Utc::now();
+        ModelRequestRepository::mark_downstream_committed(&store, &id, committed_at, status)
+            .await
+            .unwrap();
+        let committed = stored_row(&database.pool, &id).await;
+        attempt.attempt_count = 2;
+        attempt.provider_account_ref = Some("account_after_retry".to_owned());
+        attempt.upstream_transport = "http_sse".to_owned();
+        attempt.http_version = Some("HTTP/2".to_owned());
+        attempt.account_selection_wait_ms = Some(7);
+        attempt.capacity_used_slots = Some(2);
+        assert_eq!(
+            store
+                .begin_model_request_attempt(attempt.clone())
+                .await
+                .unwrap(),
+            2
+        );
+        let retried = stored_row(&database.pool, &id).await;
+        assert_eq!(
+            retried["downstream_committed_at"],
+            committed["downstream_committed_at"]
+        );
+        assert_eq!(
+            retried["client_status_code"],
+            committed["client_status_code"]
+        );
+        assert_eq!(retried["upstream_send_state"], "sent");
+        assert_eq!(retried["provider_account_ref"], "account_after_retry");
+        assert_eq!(retried["upstream_transport"], "http_sse");
+        assert_eq!(
+            retried["request_observation_json"]["scheduling"]["accountSelectionWaitMs"],
+            12
+        );
+        assert_eq!(
+            retried["request_observation_json"]["scheduling"]["capacityUsedSlots"],
+            2
+        );
+        assert_eq!(
+            retried["request_observation_json"]["transport"]["httpVersion"],
+            "HTTP/2"
+        );
+        // 已接收的序号与跳号都不能覆盖新 attempt 的账号和计时
+        for count in [2, 4] {
+            attempt.attempt_count = count;
+            let error = store
+                .begin_model_request_attempt(attempt.clone())
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                gateway_store::StoreError::Conflict {
+                    kind: gateway_store::ConflictKind::InvalidTransition,
+                    ..
+                }
+            ));
+            assert_eq!(stored_row(&database.pool, &id).await, retried);
+        }
+        let mut finalization = successful_core_finalization(&id);
+        finalization.attempt_count = 2;
+        finalization.downstream_committed_at = Some(committed_at.into());
+        finalization.client_status_code = status;
+        finalization.upstream_transport = Some("http_sse".to_owned());
+        ExecutionStore::finalize_model_request(&store, finalization)
+            .await
+            .unwrap();
+        let terminal = stored_row(&database.pool, &id).await;
+        assert_eq!(terminal["outcome"], "succeeded");
+        assert_eq!(terminal["attempt_count"], 2);
+        assert_eq!(
+            terminal["request_observation_json"]["scheduling"],
+            retried["request_observation_json"]["scheduling"]
+        );
+        attempt.attempt_count = 3;
+        assert!(store.begin_model_request_attempt(attempt).await.is_err());
+        assert_eq!(stored_row(&database.pool, &id).await, terminal);
+    }
+    database.close().await;
+}
+
+#[tokio::test]
 async fn concurrent_retry_updates_keep_request_context_and_clear_previous_transport() {
     let Some(database) = TestDatabase::create("observation_retry_cas").await else {
         return;

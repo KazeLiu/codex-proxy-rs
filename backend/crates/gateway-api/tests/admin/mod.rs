@@ -88,6 +88,7 @@ mod account_groups;
 mod accounts;
 mod auth;
 mod client_keys;
+mod compression;
 mod error_diagnostics;
 mod errors;
 mod observability;
@@ -321,6 +322,7 @@ impl MemoryAuthStore {
                     },
                     admin_user_id: "admin_1".to_owned(),
                 },
+                renewal: None,
                 absolute_expires_at: None,
                 expires_at: Utc::now() + Duration::hours(1),
             },
@@ -339,7 +341,7 @@ impl MemoryAuthStore {
         self.sessions
             .lock()
             .unwrap()
-            .get_mut(session_id)
+            .get_mut(session_id.split('.').nth(1).unwrap_or(session_id))
             .unwrap()
             .expires_at = expires_at;
     }
@@ -415,19 +417,24 @@ impl AuthStore for MemoryAuthStore {
         Ok(())
     }
 
-    async fn renew_session(
+    async fn compare_exchange_session(
         &self,
         session_id: &str,
         expected: &AuthSession,
-        expires_at: chrono::DateTime<chrono::Utc>,
+        replacement: Option<&AuthSession>,
     ) -> AdminStoreResult<Option<AuthSession>> {
         let mut sessions = self.sessions.lock().unwrap();
         if let Some(session) = sessions.get_mut(session_id) {
-            if session.expires_at <= chrono::Utc::now() {
+            if session.retained_until() <= chrono::Utc::now() {
                 return Ok(None);
             }
             if session == expected {
-                session.expires_at = expires_at;
+                if let Some(replacement) = replacement {
+                    *session = replacement.clone();
+                } else {
+                    sessions.remove(session_id);
+                    return Ok(None);
+                }
             }
             return Ok(Some(session.clone()));
         }
@@ -610,7 +617,6 @@ impl SettingsStore for MemorySettingsStore {
                 refresh_margin_seconds: command.values.refresh_margin_seconds,
                 refresh_concurrency: command.values.refresh_concurrency,
                 max_concurrent_per_account: command.values.max_concurrent_per_account,
-                request_interval_ms: command.values.request_interval_ms,
                 max_waiting_per_key: command.values.max_waiting_per_key,
                 max_waiting_per_account: command.values.max_waiting_per_account,
                 concurrency_wait_timeout_seconds: command.values.concurrency_wait_timeout_seconds,
@@ -1374,6 +1380,10 @@ impl AccountRuntimeStore for UnusedStore {
 
 #[async_trait]
 impl ObservabilityStore for UnusedStore {
+    fn query_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(10)
+    }
+
     async fn dashboard_summary(
         &self,
         query: DashboardQuery,
@@ -1726,7 +1736,6 @@ fn test_runtime_settings() -> RuntimeSettings {
             refresh_margin_seconds: 3_600,
             refresh_concurrency: 2,
             max_concurrent_per_account: 3,
-            request_interval_ms: 50,
             max_waiting_per_key: 0,
             max_waiting_per_account: 0,
             concurrency_wait_timeout_seconds: 30,

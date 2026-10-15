@@ -812,6 +812,9 @@ pub(super) fn map_selection_error(error: CredentialSelectionError) -> ProviderEr
 fn selection_failure(error: &CredentialSelectionError) -> ProviderError {
     let diagnostic_code = match error {
         CredentialSelectionError::InvalidCredential(_) => Some("account_credential_invalid"),
+        CredentialSelectionError::RevisionConflict(_) => {
+            Some("account_credential_revision_conflict")
+        }
         CredentialSelectionError::Store(_) => Some("account_store_unavailable"),
         CredentialSelectionError::Coordinator(_) => Some("account_coordinator_unavailable"),
         CredentialSelectionError::CookiePolicy(_) => Some("account_cookie_policy_rejected"),
@@ -861,6 +864,7 @@ fn selection_failure(error: &CredentialSelectionError) -> ProviderError {
                 .with_classification("account_selection", "account_snapshot_conflict"),
         ),
         CredentialSelectionError::InvalidCredential(_)
+        | CredentialSelectionError::RevisionConflict(_)
         | CredentialSelectionError::Store(_)
         | CredentialSelectionError::Coordinator(_)
         | CredentialSelectionError::CookiePolicy(_) => provider_error(

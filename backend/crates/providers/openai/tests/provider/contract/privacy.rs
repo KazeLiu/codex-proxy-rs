@@ -28,28 +28,34 @@ fn privacy_context(policy: &CodexPrivacyPolicy, fallback: bool) -> AttemptContex
     }
 }
 
-fn outbound_policy() -> CodexPrivacyPolicy {
+fn outbound_policy(aggregate: bool) -> CodexPrivacyPolicy {
     let mut auth = rule(
         PrivacyScope::RequestHeader,
         "authorization",
         PrivacyAction::SetValue,
     );
-    auth.value = json!("Bearer configured-synthetic-token");
+    auth.steps[0].value = json!("Bearer configured-synthetic-token");
     let mut input = rule(
         PrivacyScope::RequestBody,
         "$.input[0].content[0].text",
         PrivacyAction::RegexReplace,
     );
     input.id = "input".into();
-    input.pattern = Some("hello".into());
-    input.replacement = "hellohello".into();
+    input.steps[0].pattern = Some("hello".into());
+    input.steps[0].replacement = "hellohello".into();
     let mut metadata = rule(
         PrivacyScope::TurnMetadata,
         "$.workspaces",
         PrivacyAction::RemoveField,
     );
     metadata.id = "metadata".into();
-    policy(vec![auth, input, metadata])
+    if aggregate {
+        auth.steps.extend(input.steps);
+        auth.steps.extend(metadata.steps);
+        policy(vec![auth])
+    } else {
+        policy(vec![auth, input, metadata])
+    }
 }
 
 fn metadata_operation() -> Operation {
@@ -91,7 +97,7 @@ async fn privacy_json_endpoints_preserve_untouched_bytes_and_rewrite_matched_bod
         br#"{ "id":"search", "workspaces":{"/private":{}}, "future":1, "future":2 }"#,
     );
     for change_body in [false, true] {
-        let mut config = outbound_policy();
+        let mut config = outbound_policy(false);
         config.rules.truncate(1);
         if change_body {
             let mut remove = rule(
@@ -149,12 +155,12 @@ async fn privacy_rewrites_final_http_headers_and_body_once_per_attempt() {
         .await;
     let provider = provider_with_base_url(&store, server.uri());
     let operation = metadata_operation();
-    for _ in 0..2 {
+    for aggregate in [false, true] {
         let mut stream = provider
             .clone()
             .execute(
                 planned_request("openai", operation.clone()),
-                privacy_context(&outbound_policy(), true),
+                privacy_context(&outbound_policy(aggregate), true),
             )
             .await
             .unwrap();
@@ -196,7 +202,7 @@ async fn privacy_rejection_is_not_sent_and_cannot_retry_or_rotate() {
         "$.input[0].content[0].text",
         PrivacyAction::SetValue,
     );
-    invalid_target.value = json!(42);
+    invalid_target.steps[0].value = json!(42);
     let provider = provider_with_base_url(&store, server.uri());
     let result = provider
         .execute(
@@ -253,7 +259,7 @@ async fn privacy_rewrites_websocket_handshake_and_frame_once() {
     let mut stream = provider
         .execute(
             planned_request("openai", metadata_operation()),
-            privacy_context(&outbound_policy(), false),
+            privacy_context(&outbound_policy(true), false),
         )
         .await
         .unwrap();
@@ -304,8 +310,8 @@ async fn privacy_header_change_uses_a_new_websocket_pool_connection() {
         "Bearer first-synthetic-token",
         "Bearer second-synthetic-token",
     ] {
-        let mut config = outbound_policy();
-        config.rules[0].value = json!(token);
+        let mut config = outbound_policy(true);
+        config.rules[0].steps[0].value = json!(token);
         let operation = Operation::Generate(generate_with_session_context(
             "privacy-pool",
             Some("privacy-thread"),

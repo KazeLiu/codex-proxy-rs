@@ -6,7 +6,7 @@ import { useEventListener, usePreferredReducedMotion, useResizeObserver } from '
 import { gsap } from 'gsap'
 import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import HealthTimelinePointPopover from '@/components/usage/HealthTimelinePointPopover.vue'
-import { formatHealthCount, healthLegend, healthReliabilityValueClass, healthStatusMeta } from '@/components/usage/shared/health'
+import { formatHealthCount, healthEligibleRequestCount, healthLegend, healthObservedRequestCount, healthStatusMeta } from '@/components/usage/shared/health'
 
 const props = defineProps<{
   timeline: DashboardHealthTimeline
@@ -31,12 +31,8 @@ let wavedCellIndexes = new Set<number>()
 let anchorXTo: ReturnType<typeof gsap.quickTo> | undefined
 let anchorYTo: ReturnType<typeof gsap.quickTo> | undefined
 
-function observedRequests(point: DashboardHealthTimelinePoint) {
-  return point.successRequests + point.failedRequests + point.cancelledRequests + point.callerErrorRequests
-}
-
 function isInteractivePoint(point: DashboardHealthTimelinePoint) {
-  return point.status !== 'future' && observedRequests(point) > 0
+  return point.status !== 'future' && healthObservedRequestCount(point) > 0
 }
 
 function isActivePoint(point: DashboardHealthTimelinePoint) {
@@ -222,7 +218,7 @@ function releasePointWave() {
 }
 
 function pointAccessibilityLabel(point: DashboardHealthTimelinePoint) {
-  const eligibleRequests = point.successRequests + point.failedRequests
+  const eligibleRequests = healthEligibleRequestCount(point)
   return `${point.time}，${healthStatusMeta[point.status].label}，有效请求 ${formatHealthCount(eligibleRequests)}，可用性 ${point.reliabilityDisplay}`
 }
 
@@ -270,7 +266,7 @@ onBeforeUnmount(() => {
         <div class="flex shrink-0 items-center gap-3">
           <strong
             class="font-mono text-sm leading-none font-heavy tabular-nums"
-            :class="healthReliabilityValueClass(timeline.successRequests, timeline.failedRequests)"
+            :class="healthStatusMeta[timeline.status].valueClass"
           >
             {{ timeline.reliabilityDisplay }}
           </strong>

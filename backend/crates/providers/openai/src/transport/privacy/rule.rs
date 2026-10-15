@@ -1,25 +1,21 @@
-//! 单条规则的编译、捕获组校验和受预算约束的值修改
+//! 通用处理步骤的编译、捕获组校验和受预算约束的值修改
 
 use std::collections::BTreeSet;
 
-use gateway_core::settings::privacy::{PrivacyAction, PrivacyRule, PrivacyScope};
+use gateway_core::settings::privacy::{PrivacyAction, PrivacyScope, PrivacyStep};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 
 use super::{Budget, MAX_VALUE_BYTES, selector};
 
-pub(super) struct CompiledRule {
-    pub(super) rule: PrivacyRule,
+pub(super) struct CompiledStep {
+    pub(super) rule: PrivacyStep,
     pub(super) path: Vec<selector::Segment>,
     regex: Option<Regex>,
 }
 
-impl CompiledRule {
-    pub(super) fn compile(rule: &PrivacyRule) -> Result<Self, &'static str> {
-        if rule.id.is_empty() || rule.id.len() > 64 || rule.name.is_empty() || rule.name.len() > 192
-        {
-            return Err("规则 ID 或名称长度不合法");
-        }
+impl CompiledStep {
+    pub(super) fn compile(rule: &PrivacyStep) -> Result<Self, &'static str> {
         if rule.replacement.len() > 4096
             || serde_json::to_vec(&rule.value).map_or(true, |v| v.len() > 4096)
         {

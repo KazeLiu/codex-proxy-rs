@@ -11,6 +11,7 @@ mod authorization;
 mod deletion;
 mod quota_forecast;
 mod timestamps;
+mod usage_projection;
 
 use chrono::{TimeDelta, Utc};
 use gateway_admin::{
@@ -2082,6 +2083,7 @@ async fn authorization_import_rejects_a_saved_proxy_changed_during_oauth() {
     let edited = proxies
         .update(
             UpdateProxy {
+                enabled: None,
                 auto_location: None,
                 test: None,
                 location: None,

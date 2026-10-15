@@ -1,7 +1,8 @@
 //! OpenAI 上游失败分类、恢复决策与稳定错误投影
 
 use super::*;
-use gateway_core::diagnostics::TraceContext;
+use crate::transport::protocol::responses::is_replaceable_response_prelude;
+use gateway_core::error::TransientRetryPolicy;
 
 /// OpenAI 失败对 Smart 账号分数的结构化 reason 闭集
 ///
@@ -69,128 +70,50 @@ impl MappedProviderFailure {
     }
 }
 
-/// 提交边界前的上游事件预取
-///
-/// 原生 Lite 双向通道立即交付正常事件，其他通道保留到语义输出、终态或 EOF
-/// committed 只表示重放窗口已结束，不等同于首次 wire 已交付
-pub(super) struct PreCommitClientEvents {
-    pending: Vec<ProviderEvent>,
-    prefetched_bytes: usize,
-    started_at: tokio::time::Instant,
-    committed: bool,
+/// 正常事件立即交付，只记录后续失败能否请求重放
+/// 可替换前导不关闭窗口；实际输出、终态和未知事件使边界单向推进
+pub(super) struct ClientEventDelivery {
+    replay_closed: bool,
     replayable_prelude: bool,
-    trace: TraceContext,
 }
 
-#[derive(Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum PreCommitReleaseReason {
-    SemanticOutput,
-    NonReplayableEvent,
-    Terminal,
-    Eof,
-}
-
-impl PreCommitClientEvents {
-    pub(super) fn new(trace: TraceContext) -> Self {
+impl ClientEventDelivery {
+    pub(super) fn new(replayable_prelude: bool) -> Self {
         Self {
-            pending: Vec::new(),
-            prefetched_bytes: 0,
-            started_at: tokio::time::Instant::now(),
-            committed: false,
-            replayable_prelude: false,
-            trace,
+            replay_closed: false,
+            replayable_prelude,
         }
     }
 
-    pub(super) fn with_replayable_prelude(mut self, enabled: bool) -> Self {
-        self.replayable_prelude = enabled;
-        self
-    }
-
-    pub(super) fn observe_chunk(&mut self, bytes: usize) {
-        if !self.committed {
-            self.prefetched_bytes = self.prefetched_bytes.saturating_add(bytes);
-        }
-    }
-
-    pub(super) fn stage(
+    pub(super) fn forward(
         &mut self,
         incoming: Vec<ProviderEvent>,
         timing_signals: ResponseEventSignals,
         completed: bool,
     ) -> Vec<ProviderEvent> {
-        if self.committed {
+        if self.replay_closed || incoming.is_empty() {
             return incoming;
         }
-        self.pending.extend(incoming);
-        if timing_signals.semantic_output {
-            return self.commit_pending(PreCommitReleaseReason::SemanticOutput);
+        if timing_signals.semantic_output
+            || completed
+            || !self.replayable_prelude
+            || !incoming.iter().all(is_replaceable_prelude)
+        {
+            return self.commit(incoming);
         }
-        if completed {
-            return self.commit_pending(PreCommitReleaseReason::Terminal);
-        }
-        if self.replayable_prelude {
-            // 未确认可重放的事件也立即交付，但后续前导不能重新开启重试窗口
-            if !self.pending.iter().all(is_replaceable_prelude) {
-                return self.commit_pending(PreCommitReleaseReason::NonReplayableEvent);
-            }
-            self.prefetched_bytes = 0;
-            return std::mem::take(&mut self.pending)
-                .into_iter()
-                .map(ProviderEvent::with_replayable_prelude)
-                .collect();
-        }
-        Vec::new()
-    }
-
-    pub(super) fn finish(
-        &mut self,
-        incoming: Vec<ProviderEvent>,
-        timing_signals: ResponseEventSignals,
-        completed: bool,
-    ) -> Vec<ProviderEvent> {
-        let mut events = self.stage(incoming, timing_signals, completed);
-        if !self.committed {
-            events.extend(self.commit_pending(PreCommitReleaseReason::Eof));
-        }
-        events
+        incoming
+            .into_iter()
+            .map(ProviderEvent::with_replayable_prelude)
+            .collect()
     }
 
     pub(super) fn commit(&mut self, incoming: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
-        if self.committed {
-            return incoming;
-        }
-        self.pending.extend(incoming);
-        // 此入口只在同批次已出现语义输出、随后失败时释放原始事件
-        self.commit_pending(PreCommitReleaseReason::SemanticOutput)
+        self.replay_closed = true;
+        incoming
     }
 
-    pub(super) fn take_for_failure(&mut self, incoming: Vec<ProviderEvent>) -> Vec<ProviderEvent> {
-        self.pending.extend(incoming);
-        self.prefetched_bytes = 0;
-        std::mem::take(&mut self.pending)
-    }
-
-    pub(super) const fn is_committed(&self) -> bool {
-        self.committed
-    }
-
-    pub(super) fn commit_pending(&mut self, reason: PreCommitReleaseReason) -> Vec<ProviderEvent> {
-        // Provider 只记录释放缓存的原因；实际下游提交仍由 Core 记录和裁决
-        if self.trace.is_enabled() {
-            self.trace.record(
-                "provider.precommit.released",
-                json!({
-                    "reason": reason,
-                    "prefetchedBytes": self.prefetched_bytes,
-                    "waitMs": self.started_at.elapsed().as_millis(),
-                }),
-            );
-        }
-        self.committed = true;
-        self.prefetched_bytes = 0;
-        std::mem::take(&mut self.pending)
+    pub(super) const fn replay_closed(&self) -> bool {
+        self.replay_closed
     }
 }
 
@@ -198,12 +121,14 @@ fn is_replaceable_prelude(event: &ProviderEvent) -> bool {
     event
         .wire_event()
         .is_some_and(|wire| match wire.event_type() {
-            Some("codex.response.metadata" | "codex.rate_limits") => true,
-            Some("response.created" | "response.in_progress") => wire
-                .data()
-                .pointer("/response/output")
-                .is_none_or(|output| output.as_array().is_some_and(Vec::is_empty)),
-            _ => false,
+            Some(event_type) => is_replaceable_response_prelude(event_type, wire.data()),
+            // 上游 SSE 注释也即时透传，但不能把传输心跳当作业务交付
+            None => wire.raw_sse_frame().is_some_and(|frame| {
+                std::str::from_utf8(frame).is_ok_and(|text| {
+                    text.lines()
+                        .all(|line| line.is_empty() || line.starts_with(':'))
+                })
+            }),
         })
 }
 
@@ -427,6 +352,7 @@ pub(super) async fn apply_failure(
     {
         tracing::warn!(
             account_id = %account.id(),
+            credential_revision = account.revision().get(),
             error = %error,
             "Failed to persist OpenAI response cookies"
         );
@@ -515,21 +441,6 @@ pub(super) fn websocket_client_failure_policy(
         } if *status == reqwest::StatusCode::UPGRADE_REQUIRED => {
             Some(WebSocketFailurePolicy::ImmediateFallback)
         }
-        CodexClientError::Upstream {
-            status,
-            transport: CodexBackendTransport::WebSocket,
-            ..
-        } if status.is_server_error()
-            || matches!(
-                *status,
-                reqwest::StatusCode::REQUEST_TIMEOUT
-                    | reqwest::StatusCode::CONFLICT
-                    | reqwest::StatusCode::TOO_EARLY
-                    | reqwest::StatusCode::TOO_MANY_REQUESTS
-            ) =>
-        {
-            Some(WebSocketFailurePolicy::Budgeted)
-        }
         CodexClientError::WebSocket(error)
             if !matches!(
                 error.classified(),
@@ -549,11 +460,11 @@ pub(super) fn apply_websocket_recovery_policy(
     failure: &mut MappedProviderFailure,
     context: WebSocketRecoveryContext<'_>,
 ) {
-    // Flex 拒绝即使发生在 WS opening 阶段也必须直达客户端，不能转换成传输回退
+    // 未匹配网关恢复规则的上游拒绝直达客户端，不能转换成传输重试或污染会话回退状态
     if failure.error.retry_is_prohibited() {
         return;
     }
-    // 明确账号拒绝走已有换号路径，容量拒绝走请求内退避；两者都不消耗 WS 传输预算
+    // 明确账号拒绝走已有换号路径，业务瞬态失败走请求内退避，不消耗 WS 传输预算
     if failure.error.replay_is_safe()
         && (failure.account_failure.is_some()
             || matches!(
@@ -802,7 +713,6 @@ pub(super) fn stream_transport_allows_pre_delivery_retry(error: &CodexClientErro
 pub(super) fn map_canonical_error(
     error: CodexCanonicalError,
     diagnostics: &CodexUpstreamDiagnostics,
-    set_cookie_headers: &[String],
     rate_limit_headers: &[(String, String)],
     replay_boundary: ReplayBoundary,
 ) -> MappedProviderFailure {
@@ -812,7 +722,8 @@ pub(super) fn map_canonical_error(
             CodexUpstreamFailure::from_sse_failure(
                 &failure,
                 diagnostics,
-                set_cookie_headers,
+                // 响应头在开始消费流时已写回，流内失败不重放同一批 Cookie
+                &[],
                 rate_limit_headers,
                 CodexUpstreamSendPhase::AfterPayload,
             ),
@@ -1410,6 +1321,27 @@ pub(super) fn websocket_client_visible_error(
     ))
 }
 
+/// OpenAI 瞬态重试场景的策略归类入口
+///
+/// 新增场景在此选择重试后换号或返回错误，不在 Core 重新识别上游错误码
+/// 此处只选择策略，重放资格、次数与等待仍由现有 Provider 证明和 Core 门禁约束
+fn transient_retry_policy(
+    category: CodexFailureCategory,
+    failure: &CodexUpstreamFailure,
+) -> Option<TransientRetryPolicy> {
+    match category {
+        // 明确容量拒绝沿用既有恢复范围，同账号重试耗尽后仍可尝试其他账号
+        CodexFailureCategory::CapacityUnavailable => {
+            Some(TransientRetryPolicy::RetryThenRotateAccount)
+        }
+        // 通用服务故障不足以证明账号异常，503/server_error 仅在原账号内恢复
+        _ if failure.is_retryable_server_error() => {
+            Some(TransientRetryPolicy::RetryThenReturnError)
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn map_upstream_failure(
     mut failure: CodexUpstreamFailure,
     observation: Option<ProviderResponseObservation>,
@@ -1417,6 +1349,7 @@ pub(super) fn map_upstream_failure(
 ) -> MappedProviderFailure {
     let category = failure.category();
     let capacity_unavailable = category == CodexFailureCategory::CapacityUnavailable;
+    let retry_policy = transient_retry_policy(category, &failure);
     let cyber_policy_failure = failure
         .status
         .is_some_and(|status| status.is_client_error())
@@ -1432,7 +1365,13 @@ pub(super) fn map_upstream_failure(
         provider_error_kind(category)
     };
     let mut error = provider_error(error_kind, send_state);
-    if category == CodexFailureCategory::FlexUnavailable {
+    let replay_safe = failure.replay_is_safe() || cyber_policy_failure;
+    // WS opening 的 426 是明确的传输切换信号；普通拒绝不能仅凭 NotSent 触发换号
+    let upgrade_required = failure.send_phase == CodexUpstreamSendPhase::BeforePayload
+        && failure.status == Some(reqwest::StatusCode::UPGRADE_REQUIRED);
+    if category == CodexFailureCategory::FlexUnavailable
+        || (!replay_safe && continuation_failure.is_none() && !upgrade_required)
+    {
         error = error.with_retry_prohibited();
     }
     error = error.with_raw_upstream_error(RawUpstreamError::new(failure.raw_body.clone()));
@@ -1463,9 +1402,7 @@ pub(super) fn map_upstream_failure(
     if let Some(status) = failure.status {
         error = error.with_status(status.as_u16());
     }
-    if replay_boundary.permits_provider_proof()
-        && (failure.replay_is_safe() || cyber_policy_failure)
-    {
+    if replay_boundary.permits_provider_proof() && replay_safe {
         error = error.with_replay_safe();
     }
     if let Some(continuation_failure) = continuation_failure {
@@ -1479,12 +1416,26 @@ pub(super) fn map_upstream_failure(
     if let Some(retry_after) = failure.retry_after_seconds.map(Duration::from_secs) {
         error = error.with_retry_after(retry_after);
     }
-    if capacity_unavailable && error.replay_is_safe() {
-        let max_delay = Duration::from_secs(8);
+    if let Some(policy) = retry_policy
+        && error.replay_is_safe()
+    {
+        let (max_retries, max_delay, jitter) = match policy {
+            TransientRetryPolicy::RetryThenRotateAccount => {
+                (3, Duration::from_secs(8), Duration::ZERO)
+            }
+            // 服务故障只在原账号恢复，以较短的等待上限控制总延迟，并逐次采样分散重试
+            TransientRetryPolicy::RetryThenReturnError => (
+                5,
+                Duration::from_secs(2),
+                crate::jitter::server_error_retry_jitter(crate::jitter::random_u64()),
+            ),
+        };
         error = error.with_transient_retry(
-            NonZeroU32::new(3).unwrap_or(NonZeroU32::MIN),
+            NonZeroU32::new(max_retries).unwrap_or(NonZeroU32::MIN),
             Duration::from_millis(500),
             max_delay,
+            jitter,
+            policy,
         );
     }
     if let Some(code) = failure.upstream_code() {
@@ -1549,7 +1500,9 @@ pub(super) const fn provider_error_kind(category: CodexFailureCategory) -> Provi
             ProviderErrorKind::PermissionDenied
         }
         CodexFailureCategory::UsageLimitExhausted => ProviderErrorKind::QuotaExhausted,
-        CodexFailureCategory::RateLimited => ProviderErrorKind::RateLimited,
+        CodexFailureCategory::RateLimited | CodexFailureCategory::TurnRateLimited => {
+            ProviderErrorKind::RateLimited
+        }
         CodexFailureCategory::QuotaExhausted => ProviderErrorKind::QuotaExhausted,
         CodexFailureCategory::CloudflareChallenge
         | CodexFailureCategory::CloudflarePathBlocked
@@ -1604,6 +1557,7 @@ pub(super) fn account_failure(
             Some(CodexAccountFailure::CloudflarePathBlocked)
         }
         CodexFailureCategory::ModelUnsupported
+        | CodexFailureCategory::TurnRateLimited
         | CodexFailureCategory::InvalidRequest
         | CodexFailureCategory::PermissionDenied
         | CodexFailureCategory::Timeout
@@ -1691,14 +1645,20 @@ pub(super) fn provider_error(
     ProviderError::new(kind, send_state)
 }
 
-/// 只恢复明确未发送的 HTTP 建连失败；已知 TLS/配置错误不反复尝试同一路径
+/// 只恢复明确未发送的 HTTP 建连失败；TLS 协议、证书及配置错误不反复尝试同一路径
 fn transient_http_connect(error: &reqwest::Error) -> bool {
     if !error.is_connect() || error.is_builder() {
         return false;
     }
     let mut source = std::error::Error::source(error);
     while let Some(cause) = source {
-        if cause.is::<native_tls::Error>() || cause.is::<rustls::Error>() {
+        // native-tls 的 source() 不暴露 OpenSSL 错误本体，无底层 cause 的握手 EOF 需精确匹配文本
+        // 仅在类型化 native TLS 错误且 HTTP 尚未发送时放行，其他 TLS 错误仍不重试
+        if cause
+            .downcast_ref::<native_tls::Error>()
+            .is_some_and(|error| error.to_string() != "unexpected EOF")
+            || cause.is::<rustls::Error>()
+        {
             return false;
         }
         if let Some(io) = cause.downcast_ref::<std::io::Error>()

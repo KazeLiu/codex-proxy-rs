@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { OutboundProxyRecord } from '@/api'
-import { ZButton, ZCard, ZConfirmDialog, ZIconButton, ZInput, ZPageHeader, ZPagination, ZTable } from '@codex-proxy/ui'
-import { LockKeyhole, MapPin, Pencil, Plus, Search, Trash2, Users, Wifi } from '@lucide/vue'
+import { ZButton, ZCard, ZConfirmDialog, ZInput, ZPageHeader, ZPagination, ZTable, ZTag } from '@codex-proxy/ui'
+import { LockKeyhole, MapPin, Plus, Search, Users } from '@lucide/vue'
 import { shallowRef } from 'vue'
 import ProxyAccountsModal from './components/ProxyAccountsModal.vue'
+import ProxyActions from './components/ProxyActions.vue'
 import ProxyFormModal from './components/ProxyFormModal.vue'
 import { useProxies } from './composables/useProxies'
 import { proxyColumns } from './constants'
@@ -24,6 +25,12 @@ const {
   pendingDelete,
   deleting,
   testingIds,
+  updatingIds,
+  showDisable,
+  pendingDisable,
+  disabling,
+  toggleEnabled,
+  confirmDisable,
   testingConnection,
   detectingLocation,
   openForm,
@@ -84,6 +91,11 @@ const inspected = shallowRef<OutboundProxyRecord | null>(null)
                 </span>
               </div>
             </template>
+            <template #status="{ row }">
+              <ZTag :type="row.enabled ? 'success' : 'default'">
+                {{ row.enabled ? '已启用' : '已禁用' }}
+              </ZTag>
+            </template>
             <template #exitIp="{ row }">
               <div v-if="row.lastTest?.exitIpv4 && row.lastTest?.exitIpv6" class="flex flex-col gap-0.5 font-mono text-cp-xs">
                 <span class="truncate" :title="`IPv4: ${row.lastTest.exitIpv4}`">
@@ -120,17 +132,7 @@ const inspected = shallowRef<OutboundProxyRecord | null>(null)
               {{ row.lastTestAtDisplay ?? '-' }}
             </template>
             <template #actions="{ row }">
-              <div class="flex items-center gap-1">
-                <ZIconButton size="small" aria-label="测试代理" :loading="testingIds.has(row.id)" :disabled="testingIds.has(row.id)" @click="checkProxy(row)">
-                  <Wifi class="size-3.5 text-cp-link" />
-                </ZIconButton>
-                <ZIconButton size="small" aria-label="编辑代理" :disabled="testingIds.has(row.id)" @click="openForm(row)">
-                  <Pencil class="size-3.5 text-cp-link" />
-                </ZIconButton>
-                <ZIconButton size="small" :aria-label="row.accountCount ? '代理正在被账号使用' : '删除代理'" :disabled="row.accountCount > 0 || testingIds.has(row.id)" @click="requestDelete(row)">
-                  <Trash2 class="size-3.5 text-cp-error" />
-                </ZIconButton>
-              </div>
+              <ProxyActions :proxy="row" :testing="testingIds.has(row.id)" :updating="updatingIds.has(row.id)" @test="checkProxy" @edit="openForm" @toggle="toggleEnabled" @delete="requestDelete" />
             </template>
           </ZTable>
           <ZPagination v-bind="pagination" :disabled="loading" @current-change="setPage" @size-change="setPageSize" />
@@ -154,9 +156,20 @@ const inspected = shallowRef<OutboundProxyRecord | null>(null)
       @detect-location="detectLocation"
       @after-leave="clearCredentials"
     />
-    <ZConfirmDialog v-model="showDelete" title="删除代理" destructive :loading="deleting" @confirm="confirmDelete">
+    <ZConfirmDialog v-model="showDisable" title="禁用代理" confirm-text="禁用代理" :loading="disabling" @confirm="confirmDisable">
+      <p class="m-0">
+        确定禁用“{{ pendingDisable?.name }}”吗？
+      </p>
+      <p class="mt-3 mb-0 text-cp-text-secondary">
+        关联账号的新请求将改为直连，代理配置和绑定会保留，重新启用后恢复使用
+      </p>
+    </ZConfirmDialog>
+    <ZConfirmDialog v-model="showDelete" title="删除代理" confirm-text="删除代理" destructive :loading="deleting" @confirm="confirmDelete">
       <p class="m-0">
         确定删除“{{ pendingDelete?.name }}”吗？
+      </p>
+      <p class="mt-3 mb-0 text-cp-text-secondary">
+        将自动解除关联账号，关联账号的新请求将改为直连
       </p>
     </ZConfirmDialog>
     <ProxyAccountsModal v-model="showAccounts" :proxy="inspected" @removed="loadProxies({ silent: true })" />

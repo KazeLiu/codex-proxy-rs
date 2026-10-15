@@ -308,7 +308,7 @@ fn snapshot_with_accounts(
     );
     RuntimeSnapshot::new(
         ConfigRevision::new(1).expect("revision"),
-        gateway_core::settings::SettingsValues::new(2, 1, "smart", Default::default(), None, None),
+        gateway_core::settings::SettingsValues::new(2, "smart", Default::default(), None, None),
         vec![provider.clone()],
         ["model-a", "model-b"]
             .into_iter()

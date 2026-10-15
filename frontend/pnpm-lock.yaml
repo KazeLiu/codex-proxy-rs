@@ -195,8 +195,8 @@ importers:
         specifier: 1.0.1
         version: 1.0.1(vue@3.5.43(typescript@6.0.3))
       '@codex-proxy/ui':
-        specifier: github:zyycn/codex-proxy-ui#v0.4.0
-        version: https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/db615f3d72975e0d09847a07d03ed5fe7ba8c8b0(axios@1.20.0(debug@4.4.3))(change-case@5.4.4)(vite@8.3.0(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.43(typescript@6.0.3))
+        specifier: github:zyycn/codex-proxy-ui#v0.4.1
+        version: https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/1496e21637e7e80e87c7f75387e27ced5029187a(axios@1.20.0(debug@4.4.3))(change-case@5.4.4)(vite@8.3.0(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.43(typescript@6.0.3))
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -209,6 +209,9 @@ importers:
       '@vueuse/core':
         specifier: ^15.0.0
         version: 15.0.0(vue@3.5.43(typescript@6.0.3))
+      '@vueuse/integrations':
+        specifier: ^15.0.0
+        version: 15.0.0(axios@1.20.0(debug@4.4.3))(change-case@5.4.4)(sortablejs@1.15.7)(vue@3.5.43(typescript@6.0.3))
       axios:
         specifier: ^1.20.0
         version: 1.20.0(debug@4.4.3)
@@ -233,6 +236,9 @@ importers:
       semver:
         specifier: ^7.8.5
         version: 7.8.5
+      sortablejs:
+        specifier: ^1.15.7
+        version: 1.15.7
       vue:
         specifier: ^3.5.43
         version: 3.5.43(typescript@6.0.3)
@@ -255,6 +261,9 @@ importers:
       '@types/semver':
         specifier: ^7.8.0
         version: 7.8.0
+      '@types/sortablejs':
+        specifier: ^1.15.9
+        version: 1.15.9
       '@vitejs/plugin-vue':
         specifier: ^6.0.9
         version: 6.0.9(vite@8.3.0(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.43(typescript@6.0.3))
@@ -406,9 +415,9 @@ packages:
     resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
     engines: {node: '>= 20.12.0'}
 
-  '@codex-proxy/ui@https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/db615f3d72975e0d09847a07d03ed5fe7ba8c8b0':
-    resolution: {gitHosted: true, integrity: sha512-AhG9idgKHs9AWY1Fyo75wlVcBx3KXD3NEY1dF+sOg84PGAz/7mKq6Fb4xqkYqCT6UrduTjT3WbAw/2VhJJdblQ==, tarball: https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/db615f3d72975e0d09847a07d03ed5fe7ba8c8b0}
-    version: 0.4.0
+  '@codex-proxy/ui@https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/1496e21637e7e80e87c7f75387e27ced5029187a':
+    resolution: {gitHosted: true, integrity: sha512-/buYpi7vGPyKu0dwO4/P+dCYruUEjGDDlKGiVsW79BAtTmtVTDYo2DhdBFN5+haqTg+QjqEvTcym+2Fu9hOgSg==, tarball: https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/1496e21637e7e80e87c7f75387e27ced5029187a}
+    version: 0.4.1
     engines: {node: '>=24'}
     peerDependencies:
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
@@ -935,6 +944,9 @@ packages:
 
   '@types/semver@7.8.0':
     resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
+  '@types/sortablejs@1.15.9':
+    resolution: {integrity: sha512-7HP+rZGE2p886PKV9c9OJzLBI6BBJu1O7lJGYnPyG3fS4/duUCcngkNCjsLwIMV+WMqANe3tt4irrXHSIe68OQ==}
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
@@ -2807,7 +2819,7 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@codex-proxy/ui@https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/db615f3d72975e0d09847a07d03ed5fe7ba8c8b0(axios@1.20.0(debug@4.4.3))(change-case@5.4.4)(vite@8.3.0(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.43(typescript@6.0.3))':
+  '@codex-proxy/ui@https://codeload.github.com/zyycn/codex-proxy-ui/tar.gz/1496e21637e7e80e87c7f75387e27ced5029187a(axios@1.20.0(debug@4.4.3))(change-case@5.4.4)(vite@8.3.0(@types/node@26.6.2)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.43(typescript@6.0.3))':
     dependencies:
       '@ant-design/colors': 8.0.1
       '@ant-design/fast-color': 3.0.1
@@ -3208,6 +3220,8 @@ snapshots:
       undici-types: 8.9.0
 
   '@types/semver@7.8.0': {}
+
+  '@types/sortablejs@1.15.9': {}
 
   '@types/trusted-types@2.0.7':
     optional: true

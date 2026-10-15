@@ -8,6 +8,7 @@ import { use } from 'echarts/core'
 import { computed } from 'vue'
 import BaseChart from '@/components/charts/BaseChart.vue'
 import { tooltipIndex, tooltipRows } from '@/components/charts/tooltip'
+import { healthEligibleRequestCount } from '@/components/usage/shared/health'
 import { useChartPalette } from '@/composables/useChartPalette'
 import { formatLocalizedCompactNumber as formatCompactNumber, formatPercent } from '@/utils/format'
 
@@ -113,9 +114,9 @@ function requestCount(point: HealthPoint) {
 }
 
 function serviceSuccessRate(point: HealthPoint) {
-  const total = Math.max(0, point.successRequests) + Math.max(0, point.failedRequests)
+  const total = healthEligibleRequestCount(point)
   if (total > 0)
-    return Math.max(0, point.successRequests ?? 0) / total
+    return 1 - point.errorRate
   return requestCount(point) === 0 ? 0 : null
 }
 

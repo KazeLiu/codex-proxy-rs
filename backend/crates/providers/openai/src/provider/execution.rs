@@ -919,18 +919,33 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
         }
         if allows_account_state_mutation
             && !response.set_cookie_headers.is_empty()
-            && let Ok(outcome) = selector
+        {
+            match selector
                 .capture_response_cookies(
                     &active_account,
                     &response_origin,
                     &response.set_cookie_headers,
                 )
                 .await
-                && let Some(revision) = outcome.credential_revision
-                && let Ok(current) = selector.current_account(active_account.id()).await
-                && current.revision().get() == revision
-        {
-            active_account = current;
+            {
+                Ok(outcome) => {
+                    if let Some(revision) = outcome.credential_revision
+                        && let Ok(current) = selector.current_account(active_account.id()).await
+                        && current.revision().get() == revision
+                    {
+                        active_account = current;
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = %request_id,
+                        account_id = %active_account.id(),
+                        credential_revision = active_account.revision().get(),
+                        error = %error,
+                        "Failed to persist OpenAI response cookies"
+                    );
+                }
+            }
         }
         let response_transport = response.transport;
         let websocket_connection_id = response.websocket_connection_id;
@@ -940,7 +955,6 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             // opening ID 标识连接，不可作为缺失请求级错误头时的当前请求 ID
             failure_diagnostics.request_id = None;
         }
-        let failure_set_cookie_headers = response.set_cookie_headers.clone();
         let failure_rate_limit_headers = response.rate_limit_headers.clone();
         let mut passive_quota_observation =
             OpenAiPassiveQuotaObservation::new(response.rate_limit_headers);
@@ -954,11 +968,7 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             .with_requested_service_tier(request.service_tier())
             .with_request_tool_pricing(upstream_model.as_str(), request.tools())
             .with_raw_sse_passthrough();
-        let mut pre_commit_events = PreCommitClientEvents::new(trace).with_replayable_prelude(
-            websocket_transport
-                && request.responses_lite.as_deref() == Some("true")
-                && context.allows_replayable_prelude(),
-        );
+        let mut client_events = ClientEventDelivery::new(context.allows_replayable_prelude());
         loop {
             if context.deadline().is_elapsed() {
                 if allows_account_state_mutation {
@@ -1016,8 +1026,10 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                         &mut decoder,
                     )
                     .await;
-                    let observation_event = if rate_limits_changed || metadata_merge.is_some() {
-                        observation_state.observation(None).map(ProviderEvent::observation)
+                    let observation_event = if rate_limits_changed || metadata_merge.is_some()
+                        || response_transport == CodexBackendTransport::WebSocket
+                    {
+                        observation_state.observation(Some(&failure.error)).map(ProviderEvent::observation)
                     } else {
                         None
                     };
@@ -1028,7 +1040,7 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                             &mut failure,
                             WebSocketRecoveryContext {
                                 policy: WebSocketFailurePolicy::Budgeted,
-                                replay_boundary: ReplayBoundary::from_semantic_output(pre_commit_events.is_committed()),
+                                replay_boundary: ReplayBoundary::from_semantic_output(client_events.replay_closed()),
                                 requirement: request_transport_requirement,
                                 retry_count: websocket_retry_count,
                                 max_retries: stream_max_retries,
@@ -1057,7 +1069,7 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                     Err(quota_continuation_replay_error(
                         failure.error,
                         &request,
-                        ReplayBoundary::from_semantic_output(pre_commit_events.is_committed()),
+                        ReplayBoundary::from_semantic_output(client_events.replay_closed()),
                     ))?;
                     return;
                 }
@@ -1072,7 +1084,6 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             };
             let first_event_changed =
                 observation_state.observe_stream_chunk(&chunk, context.timing_started_at());
-            let chunk_len = chunk.len();
             let decoded = if websocket_transport {
                 let text = std::str::from_utf8(&chunk).map_err(|_| provider_error(ProviderErrorKind::Protocol, UpstreamSendState::Sent))?;
                 decoder.push_websocket(text)
@@ -1094,7 +1105,6 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             )
             .await;
             let metadata_changed = metadata_merge.unwrap_or(false);
-            pre_commit_events.observe_chunk(chunk_len);
             let response_model_changed = observation_state
                 .observe_upstream_response_model(decoder.response_model());
             let service_tier_changed = observation_state
@@ -1114,10 +1124,9 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                     map_canonical_error(
                         error,
                         &failure_diagnostics,
-                        &failure_set_cookie_headers,
                         &failure_rate_limit_headers,
                         ReplayBoundary::from_semantic_output(
-                            semantic_output_seen || pre_commit_events.is_committed(),
+                            semantic_output_seen || client_events.replay_closed(),
                         ),
                     ),
                     atomic_upstream_failure,
@@ -1183,15 +1192,15 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             }
             if let Some((mut failure, atomic_upstream_failure)) = terminal_failure {
                 let failure_after_commit =
-                    timing_signals.semantic_output || pre_commit_events.is_committed();
+                    timing_signals.semantic_output || client_events.replay_closed();
                 if failure_after_commit {
-                    for event in pre_commit_events.commit(events) {
+                    for event in client_events.commit(events) {
                         yield event;
                     }
                 } else if atomic_upstream_failure {
                     failure.error = failure
                         .error
-                        .with_atomic_client_events(pre_commit_events.take_for_failure(events));
+                        .with_atomic_client_events(events);
                 }
                 Err(quota_continuation_replay_error(
                     failure.error,
@@ -1200,7 +1209,7 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                 ))?;
                 return;
             }
-            let events = pre_commit_events.stage(events, timing_signals, completed);
+            let events = client_events.forward(events, timing_signals, completed);
             for event in events {
                 yield event;
             }
@@ -1230,10 +1239,9 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
                 map_canonical_error(
                     error,
                     &failure_diagnostics,
-                    &failure_set_cookie_headers,
                     &failure_rate_limit_headers,
                     ReplayBoundary::from_semantic_output(
-                        semantic_output_seen || pre_commit_events.is_committed(),
+                        semantic_output_seen || client_events.replay_closed(),
                     ),
                 ),
                 atomic_upstream_failure,
@@ -1317,15 +1325,15 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
         }
         if let Some((mut failure, atomic_upstream_failure)) = terminal_failure {
             let failure_after_commit =
-                timing_signals.semantic_output || pre_commit_events.is_committed();
+                timing_signals.semantic_output || client_events.replay_closed();
             if failure_after_commit {
-                for event in pre_commit_events.commit(events) {
+                for event in client_events.commit(events) {
                     yield event;
                 }
             } else if atomic_upstream_failure {
                 failure.error = failure
                     .error
-                    .with_atomic_client_events(pre_commit_events.take_for_failure(events));
+                    .with_atomic_client_events(events);
             }
             Err(quota_continuation_replay_error(
                 failure.error,
@@ -1334,7 +1342,7 @@ pub(super) fn cold_response_stream(response: ColdResponse) -> EventStream {
             ))?;
             return;
         }
-        let events = pre_commit_events.finish(events, timing_signals, completed);
+        let events = client_events.forward(events, timing_signals, completed);
         for event in events {
             yield event;
         }

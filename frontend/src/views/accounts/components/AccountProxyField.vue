@@ -18,9 +18,10 @@ const options = computed(() => [
     : []),
   { label: '直连', value: 'direct', description: '不使用代理' },
   ...proxies.value.map(proxy => ({
-    label: `${proxy.name}${proxy.lastTest?.success ? '' : proxy.lastTest ? '（测试失败）' : '（未测试）'}`,
+    label: `${proxy.name}${!proxy.enabled ? '（已禁用）' : proxy.lastTest?.success ? '' : proxy.lastTest ? '（测试失败）' : '（未测试）'}`,
     value: proxy.id,
     description: proxy.endpoint,
+    disabled: !proxy.enabled,
   })),
 ])
 const selection = computed({

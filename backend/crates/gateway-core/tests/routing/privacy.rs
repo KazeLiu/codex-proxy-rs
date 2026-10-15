@@ -1,4 +1,4 @@
-//! 隐私策略在快照与请求计划中的冻结、复用及关闭行为
+//! 隐私策略的数据合同，以及快照与请求计划中的冻结、复用及关闭行为
 
 use super::*;
 use gateway_core::settings::privacy::*;
@@ -16,7 +16,7 @@ impl PrivacyPolicyCompiler for Compiler {
         policy: &CodexPrivacyPolicy,
     ) -> Result<Arc<dyn CompiledPrivacyPolicy>, PrivacyError> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        Ok(Arc::new(Compiled(policy.rules[0].value.clone())))
+        Ok(Arc::new(Compiled(policy.rules[0].steps[0].value.clone())))
     }
 }
 
@@ -41,17 +41,39 @@ fn policy(value: &str) -> CodexPrivacyPolicy {
             id: "rule".into(),
             name: "规则".into(),
             enabled: true,
-            scope: PrivacyScope::RequestBody,
-            selector: "$.metadata".into(),
-            action: PrivacyAction::SetValue,
-            pattern: None,
-            replacement: String::new(),
-            value: serde_json::json!(value),
-            replace_all: false,
-            case_insensitive: false,
-            multi_line: false,
+            steps: vec![PrivacyStep {
+                scope: PrivacyScope::RequestBody,
+                selector: "$.metadata".into(),
+                action: PrivacyAction::SetValue,
+                pattern: None,
+                replacement: String::new(),
+                value: serde_json::json!(value),
+                replace_all: false,
+                case_insensitive: false,
+                multi_line: false,
+            }],
         }],
     }
+}
+
+#[test]
+fn privacy_rule_requires_steps_and_rejects_unknown_fields() {
+    let expected = policy("user").rules.remove(0);
+    let value = serde_json::to_value(&expected).unwrap();
+    assert_eq!(
+        serde_json::from_value::<PrivacyRule>(value.clone()).unwrap(),
+        expected
+    );
+
+    let mut missing_steps = value.clone();
+    missing_steps.as_object_mut().unwrap().remove("steps");
+    assert!(serde_json::from_value::<PrivacyRule>(missing_steps).is_err());
+    let mut unknown_rule_field = value.clone();
+    unknown_rule_field["scope"] = serde_json::json!("request_body");
+    assert!(serde_json::from_value::<PrivacyRule>(unknown_rule_field).is_err());
+    let mut unknown_step_field = value;
+    unknown_step_field["steps"][0]["unexpected"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<PrivacyRule>(unknown_step_field).is_err());
 }
 
 fn compiled(snapshot: &RuntimeSnapshot) -> Option<Arc<dyn CompiledPrivacyPolicy>> {

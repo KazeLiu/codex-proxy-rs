@@ -27,6 +27,7 @@ export interface OutboundProxyTest {
 }
 
 export interface OutboundProxyRecord {
+  enabled: boolean
   autoLocation: boolean
   detectedLocation: DetectedProxyLocation | null
   location: RequestLocation | null
@@ -107,7 +108,7 @@ export function createProxy(data: { name: string, proxyUrl: string, autoLocation
   })
 }
 
-export function updateProxy(data: { id: string, revision: number, name: string, proxyUrl?: string, autoLocation?: boolean, location?: RequestLocation | null }) {
+export function updateProxy(data: { id: string, revision: number, name: string, enabled?: boolean, proxyUrl?: string, autoLocation?: boolean, location?: RequestLocation | null }) {
   return request<ProxyMutation>({
     url: '/api/admin/proxies/update',
     timeout: 25000,

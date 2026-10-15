@@ -50,7 +50,6 @@ fn update_body() -> Value {
         "refreshMarginSeconds": 1800,
         "refreshConcurrency": 4,
         "maxConcurrentPerAccount": 5,
-        "requestIntervalMs": 25,
         "maxWaitingPerKey": 0,
         "maxWaitingPerAccount": 0,
         "openaiGuardianReservedConcurrency": 0,
@@ -85,9 +84,10 @@ async fn privacy_save_requires_provider_validation_and_preview_requires_admin_au
     fixture.auth.insert_session("valid-session");
     let mut body = update_body();
     let policy = json!({"enabled":true,"onError":"reject_request","rules":[{
-        "id":"auth","name":"自定义认证头","enabled":true,"scope":"request_header",
-        "selector":"authorization","action":"remove_field","pattern":null,
-        "replacement":"","value":null,"replaceAll":true,"caseInsensitive":false,"multiLine":false
+        "id":"auth","name":"自定义认证头","enabled":true,"steps":[{
+            "scope":"request_header","selector":"authorization","action":"remove_field","pattern":null,
+            "replacement":"","value":null,"replaceAll":true,"caseInsensitive":false,"multiLine":false
+        }]
     }]});
     body["codexPrivacyPolicy"] = policy.clone();
     let response = app(fixture.state())
@@ -287,7 +287,6 @@ fn settings_response_should_cover_the_full_runtime_settings_contract() {
             refresh_margin_seconds: 1800,
             refresh_concurrency: 4,
             max_concurrent_per_account: 5,
-            request_interval_ms: 25,
             max_waiting_per_key: 0,
             max_waiting_per_account: 0,
             concurrency_wait_timeout_seconds: 30,
@@ -337,7 +336,6 @@ fn settings_response_should_cover_the_full_runtime_settings_contract() {
             "refreshMarginSeconds": 1800,
             "refreshConcurrency": 4,
             "maxConcurrentPerAccount": 5,
-            "requestIntervalMs": 25,
             "maxWaitingPerKey": 0,
             "maxWaitingPerAccount": 0,
             "openaiGuardianReservedConcurrency": 0,
@@ -415,7 +413,6 @@ fn settings_request_and_response_fields_should_stay_in_lockstep() {
             refresh_concurrency: u32::try_from(request.values.refresh_concurrency).expect("u32"),
             max_concurrent_per_account: u32::try_from(request.values.max_concurrent_per_account)
                 .expect("u32"),
-            request_interval_ms: request.values.request_interval_ms,
             max_waiting_per_key: 0,
             max_waiting_per_account: 0,
             concurrency_wait_timeout_seconds: 30,

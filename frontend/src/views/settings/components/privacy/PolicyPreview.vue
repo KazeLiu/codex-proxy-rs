@@ -39,20 +39,27 @@ async function test() {
           <span class="flex min-h-4 items-center text-cp leading-none font-medium text-cp-text-secondary">最终结果</span><pre class="cp-scrollbar m-0 h-64 overflow-auto rounded-cp bg-cp-fill-quaternary p-3 font-mono text-cp-xs break-all whitespace-pre-wrap">{{ output || '点击测试查看结果' }}</pre>
         </div>
       </div>
-      <div v-if="result" class="grid gap-2">
-        <div v-for="(outcome, index) in result.outcomes" :key="outcome.ruleId" class="flex flex-wrap justify-between gap-2 text-cp-sm">
-          <span>{{ index + 1 }} · {{ policy.rules.find(rule => rule.id === outcome.ruleId)?.name }}</span>
-          <span :class="outcome.status === 'skipped' ? 'text-cp-warning-text' : 'text-cp-text-secondary'">{{ outcome.reason || (outcome.status === 'disabled' ? '未启用' : `命中 ${outcome.matches} 处`) }}</span>
-        </div>
-      </div>
+      <ol v-if="result" class="m-0 grid list-none gap-1.5 p-0" aria-label="规则执行结果">
+        <li v-for="outcome in result.outcomes" :key="outcome.ruleId" class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 rounded-cp bg-cp-fill-quaternary px-3 py-2.5 text-cp-sm">
+          <span class="truncate font-medium" :title="policy.rules.find(rule => rule.id === outcome.ruleId)?.name">{{ policy.rules.find(rule => rule.id === outcome.ruleId)?.name }}</span>
+          <span v-if="outcome.status === 'disabled'" class="text-cp-xs text-cp-text-tertiary">未启用</span>
+          <span v-else-if="outcome.status === 'skipped'" class="text-cp-xs text-cp-warning-text">已跳过</span>
+          <span v-else class="inline-flex items-baseline gap-1 whitespace-nowrap text-cp-xs text-cp-text-secondary">
+            命中 <strong class="text-cp-sm font-emphasis text-cp-text tabular-nums">{{ outcome.matches }}</strong> 处
+          </span>
+          <p v-if="outcome.reason" class="col-span-2 m-0 text-cp-xs break-words text-cp-warning-text">
+            {{ outcome.reason }}
+          </p>
+        </li>
+      </ol>
       <p v-if="localError || error" role="alert" class="m-0 text-cp-sm text-cp-error-text">
         {{ localError || error }}
       </p>
     </div>
     <template #footer>
-      <ZButton size="small" @click="open = false">
+      <ZButton @click="open = false">
         关闭
-      </ZButton><ZButton size="small" type="primary" :loading="loading" @click="test">
+      </ZButton><ZButton type="primary" :loading="loading" @click="test">
         测试规则
       </ZButton>
     </template>

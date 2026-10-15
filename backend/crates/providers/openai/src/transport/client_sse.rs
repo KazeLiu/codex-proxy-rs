@@ -27,7 +27,8 @@ use crate::transport::{
     profile::CodexWireProfileState,
     protocol::{
         responses::{
-            CodexResponsesRequest, ResponsesSseFailure, TransportRequirement, transport_requirement,
+            CodexResponsesRequest, TransportRequirement, is_replaceable_response_prelude,
+            transport_requirement,
         },
         websocket::{
             websocket_audit_artifact_from_attempt, websocket_connection_limit_failure,
@@ -37,10 +38,9 @@ use crate::transport::{
     response_meta,
     websocket::{
         CodexWebSocketConnection, CodexWebSocketExchangeError, CodexWebSocketPool,
-        CodexWebSocketPoolKey, CodexWebSocketStreamingExchange, DEFAULT_STREAM_IDLE_TIMEOUT,
-        WEBSOCKET_FAST_PATH_BUDGET, WebSocketFastPath, WebSocketOriginBreaker,
-        execute_prepared_response_create_request_stream, post_send_ambiguous,
-        prepare_response_create_request_with_pool, websocket_audit_dir,
+        CodexWebSocketPoolKey, DEFAULT_STREAM_IDLE_TIMEOUT, WEBSOCKET_FAST_PATH_BUDGET,
+        WebSocketFastPath, WebSocketOriginBreaker, execute_prepared_response_create_request_stream,
+        post_send_ambiguous, prepare_response_create_request_with_pool, websocket_audit_dir,
         write_websocket_audit_artifact_from_env,
     },
 };
@@ -488,15 +488,12 @@ impl CodexBackendClient {
                 )
                 .await
                 .map_err(websocket_exchange_error_to_client_error)?;
-                if requirement.allows_connection_restart()
-                    && request.responses_lite.as_deref() == Some("true")
-                    && request.downstream_websocket_connection_id.is_some()
-                {
-                    // Lite 客户端需先拿到响应 ID 才能中断；连接级拒绝仍沿用原有分类
+                if requirement.allows_connection_restart() {
+                    // 前导帧即时交付；连接寿命拒绝仍沿用原有分类与恢复预算
                     let mut boundary_reached = false;
                     exchange.body = Box::pin(exchange.body.map(move |frame| {
                         let frame = frame?;
-                        if !boundary_reached && !is_websocket_lifecycle_prelude(&frame) {
+                        if !boundary_reached && !is_websocket_replayable_prelude(&frame) {
                             boundary_reached = true;
                             if let Some(failure) = websocket_connection_limit_failure(&frame) {
                                 return Err(CodexWebSocketExchangeError::ConnectionLimitReached(
@@ -506,20 +503,6 @@ impl CodexBackendClient {
                         }
                         Ok(frame)
                     }));
-                } else if requirement.allows_connection_restart() {
-                    match await_websocket_delivery_boundary(&mut exchange).await {
-                        Ok(DeliveryBoundary::Ready) => {}
-                        Ok(DeliveryBoundary::ConnectionLimitReached(failure)) => {
-                            return Err(CodexClientError::WebSocket(
-                                CodexWebSocketExchangeError::ConnectionLimitReached(failure),
-                            ));
-                        }
-                        Err(error) => {
-                            return Err(websocket_exchange_error_to_client_error(
-                                post_send_ambiguous(error),
-                            ));
-                        }
-                    }
                 }
                 Ok(CodexBackendStreamingResponse {
                     body: Box::pin(
@@ -630,54 +613,14 @@ impl CodexBackendClient {
     }
 }
 
-/// 首个可投递帧前的交付边界结果
-enum DeliveryBoundary {
-    /// 已越过边界，可开始向下游投递
-    Ready,
-    /// 首个可投递帧是上游连接寿命限制错误
-    ConnectionLimitReached(Box<ResponsesSseFailure>),
-}
-
-async fn await_websocket_delivery_boundary(
-    exchange: &mut CodexWebSocketStreamingExchange,
-) -> Result<DeliveryBoundary, CodexWebSocketExchangeError> {
-    let mut prelude = Vec::new();
-    loop {
-        match exchange.body.next().await {
-            Some(Ok(frame)) if is_websocket_lifecycle_prelude(&frame) => prelude.push(frame),
-            Some(Ok(frame)) => {
-                let connection_limit_failure = websocket_connection_limit_failure(&frame);
-                prelude.push(frame);
-                let remaining =
-                    std::mem::replace(&mut exchange.body, Box::pin(futures::stream::empty()));
-                exchange.body =
-                    Box::pin(futures::stream::iter(prelude.into_iter().map(Ok)).chain(remaining));
-                return Ok(if let Some(failure) = connection_limit_failure {
-                    DeliveryBoundary::ConnectionLimitReached(Box::new(failure))
-                } else {
-                    DeliveryBoundary::Ready
-                });
-            }
-            Some(Err(error)) => return Err(error),
-            None => {
-                return Err(CodexWebSocketExchangeError::StreamEndedBeforeTerminal {
-                    reason: "stream_eof",
-                    timeout: None,
-                    last_event_type: None,
-                });
-            }
-        }
-    }
-}
-
-fn is_websocket_lifecycle_prelude(frame: &[u8]) -> bool {
+fn is_websocket_replayable_prelude(frame: &[u8]) -> bool {
     serde_json::from_slice::<serde_json::Value>(frame)
         .ok()
         .is_some_and(|value| {
-            matches!(
-                value.get("type").and_then(serde_json::Value::as_str),
-                Some("response.created" | "response.in_progress")
-            )
+            value
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|event_type| is_replaceable_response_prelude(event_type, &value))
         })
 }
 

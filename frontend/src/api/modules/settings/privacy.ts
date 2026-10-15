@@ -9,6 +9,10 @@ export interface PrivacyRule {
   id: string
   name: string
   enabled: boolean
+  steps: PrivacyStep[]
+}
+
+export interface PrivacyStep {
   scope: PrivacyScope
   selector: string
   action: PrivacyAction

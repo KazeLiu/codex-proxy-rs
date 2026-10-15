@@ -1128,7 +1128,6 @@ pub(crate) fn account_policy() -> gateway_core::account::AccountSelectionPolicy 
     gateway_core::account::AccountSelectionPolicy::new(
         gateway_core::account::RotationStrategy::Smart,
         NonZeroU32::new(2).expect("nonzero concurrency"),
-        Duration::from_millis(10),
     )
     .with_openai_account_affinity(gateway_core::account::AccountAffinity::Strict)
 }
