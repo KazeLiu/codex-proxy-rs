@@ -4,12 +4,14 @@ import type { Account } from '@/api'
 import { ZEmpty, ZIconButton } from '@codex-proxy/ui'
 
 import { ChartNoAxesCombined, RefreshCw, UserRound } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, toRef, watch } from 'vue'
 import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import { formatProviderLabel } from '@/utils/providers'
+import { useAccountBalance } from '../../composables/useAccountBalance'
 import { groupedAccountQuotaWindows, orderedPanelQuotaWindows } from '../../constants'
 import AccountProfileModal from '../account-profile-modal/index.vue'
 import AccountQuotaForecastModal from '../account-quota-forecast-modal/index.vue'
+import AccountBalancePanel from '../AccountBalancePanel.vue'
 import AccountQuotaPanelEntry from './Entry.vue'
 import AccountResetCredits from './ResetCredits.vue'
 
@@ -22,7 +24,9 @@ const emit = defineEmits<{
   accountUpdated: [account: Account]
   refreshQuota: [accountId: string]
   quotaReset: [accountId: string]
+  balanceUpdated: []
 }>()
+const { balance, loading: balanceLoading, error: balanceError, load: loadBalance } = useAccountBalance(toRef(props, 'account'), () => emit('balanceUpdated'))
 
 const quotaEntries = computed(() => groupedAccountQuotaWindows(
   orderedPanelQuotaWindows(props.account.quota.windows),
@@ -43,7 +47,7 @@ watch(hasPersonalInfo, (available) => {
     <div class="mb-3 flex shrink-0 items-start justify-between gap-3">
       <div class="min-w-0">
         <h3 class="m-0 text-cp-lg font-heavy text-cp-text">
-          账号额度
+          {{ balance ? '上游余额与额度' : '账号额度' }}
         </h3>
         <p
           v-if="account.capabilities.quota || quotaEntries.length > 0"
@@ -99,7 +103,8 @@ watch(hasPersonalInfo, (available) => {
       </div>
     </div>
 
-    <div v-if="!account.capabilities.quota && quotaEntries.length === 0" class="grid flex-1 place-items-center">
+    <AccountBalancePanel v-if="balance" :balance="balance" :loading="balanceLoading" :error="balanceError" @refresh="void loadBalance(true)" />
+    <div v-else-if="!account.capabilities.quota && quotaEntries.length === 0" class="grid flex-1 place-items-center">
       <ZEmpty title="暂不支持查询上游额度" surface="none" />
     </div>
     <div v-else class="grid min-h-0 gap-3">

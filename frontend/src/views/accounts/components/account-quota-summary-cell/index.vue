@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { Account } from '@/api'
 
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import AccountUsageWindow from '@/components/account/account-usage-window/index.vue'
 import { quotaWindowPresentation } from '@/components/account/account-usage-window/presenter'
+import { useAccountBalance } from '../../composables/useAccountBalance'
 import { groupedAccountQuotaWindows, visibleSummaryQuotaWindows } from '../../constants'
+import AccountBalancePanel from '../AccountBalancePanel.vue'
 import AccountCapacityIndicator from '../AccountCapacityIndicator.vue'
 import AccountQuotaSummaryEntry from './Entry.vue'
 import { recentlyUsedQuotaEntry, representativeQuotaWindow } from './presenter'
@@ -13,7 +15,8 @@ const props = defineProps<{
   account: Account
 }>()
 
-const emit = defineEmits<{ showConcurrency: [] }>()
+const emit = defineEmits<{ showConcurrency: [], balanceUpdated: [] }>()
+const { balance, loading: balanceLoading, error: balanceError, load: loadBalance } = useAccountBalance(toRef(props, 'account'), () => emit('balanceUpdated'))
 
 const quotaWindows = computed(() => props.account.quota.windows)
 const visibleQuotaWindows = computed(() => visibleSummaryQuotaWindows(quotaWindows.value))
@@ -46,7 +49,8 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
           <span class="truncate text-[10px] font-bold text-cp-text-quaternary">{{ account.usage.windowLabelDisplay }}</span>
           <AccountCapacityIndicator :capacity="account.capacity" @show-details="emit('showConcurrency')" />
         </div>
-        <div class="h-1 w-full rounded-full bg-cp-success" title="上游额度未提供，绿色条不表示剩余额度" aria-hidden="true" />
+        <AccountBalancePanel v-if="balance" :balance="balance" :loading="balanceLoading" :error="balanceError" compact @refresh="void loadBalance(true)" />
+        <div v-else class="h-1 w-full rounded-full bg-cp-success" title="上游额度未提供，绿色条不表示剩余额度" aria-hidden="true" />
       </div>
     </template>
     <template v-else-if="summaryEntries.length > 0">
