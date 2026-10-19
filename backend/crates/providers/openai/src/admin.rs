@@ -164,6 +164,109 @@ impl OpenAiAdminProvider {
 
 #[async_trait]
 impl ProviderAdmin for OpenAiAdminProvider {
+    async fn upstream_quota_snapshots(
+        &self,
+        accounts: &[ProviderAccountId],
+    ) -> Result<
+        std::collections::BTreeMap<
+            ProviderAccountId,
+            gateway_admin::model::upstream_quota::AccountUpstreamQuota,
+        >,
+        ProviderAdminError,
+    > {
+        self.quota.upstream_snapshots(accounts).await
+    }
+
+    async fn quota_accounts(
+        &self,
+        ids: &[ProviderAccountId],
+    ) -> Result<Vec<(ProviderAccountId, gateway_protocol::quota::QuotaAccount)>, ProviderAdminError>
+    {
+        use gateway_protocol::quota::{
+            QuotaAccount, QuotaObservationStatus, QuotaWindow, QuotaWindowRole,
+        };
+        let allowed = ids.iter().collect::<std::collections::BTreeSet<_>>();
+        let upstream = self.quota.upstream_snapshots(ids).await?;
+        let accounts = self
+            .accounts
+            .list_for_provider(&self.provider_kind)
+            .await
+            .map_err(map_store_error)?;
+        let mut entries = Vec::new();
+        for account in accounts
+            .into_iter()
+            .filter(|account| account.enabled() && allowed.contains(account.id()))
+        {
+            let id = account.id().clone();
+            if account.authentication_kind() == crate::credential::CODEX_AUTHENTICATION_KIND_API_KEY
+            {
+                if let Some(snapshot) = upstream.get(&id)
+                    && !snapshot.forwarding_blocked
+                    && !snapshot.accounts.is_empty()
+                {
+                    entries.extend(
+                        snapshot
+                            .accounts
+                            .iter()
+                            .cloned()
+                            .map(|entry| (id.clone(), entry)),
+                    );
+                } else {
+                    entries.push((
+                        id.clone(),
+                        QuotaAccount::unknown(id.as_str().to_owned(), "上游账号".to_owned()),
+                    ));
+                }
+                continue;
+            }
+            let quota = self
+                .quota(ProviderQuotaRequest {
+                    account_id: id.clone(),
+                    refresh: false,
+                    rolling_usage: None,
+                })
+                .await?;
+            let Some(observed_at) = quota.observed_at else {
+                entries.push((
+                    id.clone(),
+                    QuotaAccount::unknown(id.as_str().to_owned(), "上游账号".to_owned()),
+                ));
+                continue;
+            };
+            let windows = quota
+                .windows
+                .into_iter()
+                .map(|window| QuotaWindow {
+                    key: window.key,
+                    group: window.group,
+                    label: window.label,
+                    role: window.role.map(|role| match role {
+                        ProviderQuotaWindowRole::Primary => QuotaWindowRole::Primary,
+                        ProviderQuotaWindowRole::Secondary => QuotaWindowRole::Secondary,
+                        ProviderQuotaWindowRole::Monthly => QuotaWindowRole::Monthly,
+                    }),
+                    window_seconds: window.window_seconds,
+                    used_percent: window.used_percent,
+                    reset_at: window.reset_at,
+                    limit_reached: window.limit_reached,
+                    limit_id: window.limit_id,
+                    limit_name: window.limit_name,
+                })
+                .collect();
+            entries.push((
+                id.clone(),
+                QuotaAccount {
+                    id: id.as_str().to_owned(),
+                    label: "上游账号".to_owned(),
+                    status: QuotaObservationStatus::Observed,
+                    observed_at: Some(observed_at),
+                    windows,
+                },
+            ));
+        }
+        Ok(entries)
+    }
+
     fn compile_privacy_policy(
         &self,
         policy: &gateway_core::settings::privacy::CodexPrivacyPolicy,
@@ -260,6 +363,13 @@ impl ProviderAdmin for OpenAiAdminProvider {
             return;
         }
         self.quota.invalidate_scheduling(account_ids);
+        let quota = self.quota.clone();
+        let ids = account_ids.to_vec();
+        tokio::spawn(async move {
+            if let Err(error) = quota.refresh_upstream_ids(&ids).await {
+                tracing::warn!(kind = ?error.kind(), "upstream quota refresh after account change failed");
+            }
+        });
         if let Err(error) = self.catalog.invalidate() {
             tracing::warn!(
                 account_count = account_ids.len(),
@@ -677,7 +787,11 @@ impl ProviderAdmin for OpenAiAdminProvider {
             .map_err(|_| provider_admin_error(ProviderAdminErrorKind::Invalid))?;
         let value = match data {
             crate::credential::CodexCredentialData::ApiKey(data) => {
-                serde_json::to_value(data.configuration())
+                let mut configuration = data.configuration();
+                configuration.fetch_upstream_quota =
+                    crate::credential::quota_setting(&current.credential)
+                        .map_err(|_| provider_admin_error(ProviderAdminErrorKind::Invalid))?;
+                serde_json::to_value(configuration)
                     .map_err(|_| provider_admin_error(ProviderAdminErrorKind::Internal))?
             }
             crate::credential::CodexCredentialData::OAuth(data) => {
@@ -705,7 +819,7 @@ impl ProviderAdmin for OpenAiAdminProvider {
         let mut account = self.account(&account_id).await?;
         if account.authentication_kind() == crate::credential::CODEX_AUTHENTICATION_KIND_API_KEY {
             if refresh {
-                return Err(provider_admin_error(ProviderAdminErrorKind::Unsupported));
+                self.quota.refresh_upstream(&account_id, true).await?;
             }
             return Ok(project_quota(None, &account));
         }
@@ -1789,6 +1903,7 @@ const fn provider_admin_error_code(kind: ProviderAdminErrorKind) -> &'static str
         ProviderAdminErrorKind::CredentialRefreshRequired => "credential_refresh_required",
         ProviderAdminErrorKind::BadGateway => "bad_gateway",
         ProviderAdminErrorKind::Internal => "internal",
+        ProviderAdminErrorKind::RateLimited => "rate_limited",
     }
 }
 

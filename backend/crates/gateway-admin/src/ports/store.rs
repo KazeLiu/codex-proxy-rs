@@ -335,6 +335,52 @@ pub trait AuthStore: Send + Sync {
 /// Client API Key 资料读取与管理写入
 #[async_trait]
 pub trait ClientKeyStore: Send + Sync {
+    async fn quota_sharing_settings(
+        &self,
+        _ids: &[gateway_core::policy::ClientApiKeyId],
+    ) -> AdminStoreResult<BTreeMap<String, bool>> {
+        Ok(BTreeMap::new())
+    }
+
+    async fn quota_export_identity(
+        &self,
+        _id: &gateway_core::policy::ClientApiKeyId,
+    ) -> AdminStoreResult<Option<crate::model::upstream_quota::QuotaExportIdentity>> {
+        Ok(None)
+    }
+
+    async fn create_client_key_with_quota_sharing(
+        &self,
+        command: NewClientKey,
+        sharing: Option<bool>,
+        context: &MutationContext,
+    ) -> AdminStoreResult<(Revision, ClientKeyRecord)> {
+        if sharing.is_some() {
+            return Err(AdminStoreError::new(
+                AdminStoreErrorKind::Unavailable,
+                "client API key",
+                "quota sharing is not supported",
+            ));
+        }
+        self.create_client_key(command, context).await
+    }
+
+    async fn update_client_key_with_quota_sharing(
+        &self,
+        command: UpdateClientKey,
+        sharing: Option<bool>,
+        context: &MutationContext,
+    ) -> AdminStoreResult<(Revision, ClientKeyRecord)> {
+        if sharing.is_some() {
+            return Err(AdminStoreError::new(
+                AdminStoreErrorKind::Unavailable,
+                "client API key",
+                "quota sharing is not supported",
+            ));
+        }
+        self.update_client_key(command, context).await
+    }
+
     /// 按已验证的 ID 读取资料，不读取完整明文 Key
     async fn get_client_key(
         &self,

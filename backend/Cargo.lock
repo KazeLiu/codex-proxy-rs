@@ -1708,6 +1708,7 @@ dependencies = [
  "cron",
  "futures",
  "gateway-core",
+ "gateway-protocol",
  "heck",
  "hex",
  "hkdf",
@@ -1890,6 +1891,7 @@ dependencies = [
 name = "gateway-protocol"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "http",
  "httpdate",
  "memchr",

@@ -152,6 +152,7 @@ impl ClientKeySort {
 #[derive(Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateClientKeyRequest {
+    quota_sharing_enabled: Option<bool>,
     #[serde(default)]
     provider_request_profile_overrides: ProviderRequestProfileOverrides,
     openai_client_profile_override: Option<serde_json::Map<String, serde_json::Value>>,
@@ -217,6 +218,7 @@ impl CreateClientKeyRequest {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateClientKeyRequest {
+    quota_sharing_enabled: Option<bool>,
     #[serde(default)]
     provider_request_profile_overrides: ProviderRequestProfileOverrideUpdates,
     #[serde(default, deserialize_with = "deserialize_profile_override")]
@@ -334,6 +336,7 @@ impl ClientKeyMutationRequest {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientKeyView {
+    quota_sharing_enabled: bool,
     provider_request_profile_overrides: ProviderRequestProfileOverrides,
     /// 固定兼容字段；值始终从 provider_request_profile_overrides 派生
     openai_client_profile_override: Option<serde_json::Map<String, serde_json::Value>>,
@@ -384,6 +387,7 @@ impl From<(ClientKeyRecord, crate::time::TimePresenter)> for ClientKeyView {
                 .cloned(),
             xai_client_profile_override: provider_request_profile_overrides.get("xai").cloned(),
             provider_request_profile_overrides,
+            quota_sharing_enabled: false,
             id: record.id.to_string(),
             name: record.name,
             label: record.label,
@@ -902,7 +906,22 @@ where
         .list(query.into_command().map_err(map_wire_error)?)
         .await
         .map_err(map_service_error)?;
-    let data = ClientKeyListData::try_from((result, time)).map_err(|_| AdminError::internal())?;
+    let ids = result
+        .items
+        .iter()
+        .map(|key| key.id.clone())
+        .collect::<Vec<_>>();
+    let settings = state
+        .admin_services()
+        .client_keys()
+        .quota_sharing_settings(&ids)
+        .await
+        .map_err(map_service_error)?;
+    let mut data =
+        ClientKeyListData::try_from((result, time)).map_err(|_| AdminError::internal())?;
+    for key in &mut data.items {
+        key.quota_sharing_enabled = settings.get(&key.id).copied().unwrap_or(false);
+    }
     Ok(AdminResponse::new(StatusCode::OK, AdminEnvelope::ok(data)))
 }
 
@@ -914,11 +933,12 @@ async fn create_client_key<S>(
 where
     S: SessionState + Send + Sync,
 {
+    let sharing = payload.quota_sharing_enabled;
     let command = payload.into_command().map_err(map_wire_error)?;
     let result = state
         .admin_services()
         .client_keys()
-        .create(&auth.context().mutation_context(), command)
+        .create_with_quota_sharing(&auth.context().mutation_context(), command, sharing)
         .await
         .map_err(map_service_error)?;
     Ok(AdminResponse::new(
@@ -961,12 +981,13 @@ async fn update_client_key<S>(
 where
     S: SessionState + Send + Sync,
 {
+    let sharing = payload.quota_sharing_enabled;
     let command = payload.into_command().map_err(map_wire_error)?;
     mutation_response(
         state
             .admin_services()
             .client_keys()
-            .update(&auth.context().mutation_context(), command)
+            .update_with_quota_sharing(&auth.context().mutation_context(), command, sharing)
             .await,
     )
 }

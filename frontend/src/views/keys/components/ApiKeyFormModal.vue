@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ApiKeyFormValue } from '../composables/useApiKeyEditor'
 import type { AccountGroupRef } from '@/api'
-import { ZButton, ZDialog, ZForm, ZFormItem, ZInput } from '@codex-proxy/ui'
+import { ZButton, ZDialog, ZForm, ZFormItem, ZInput, ZSwitch } from '@codex-proxy/ui'
 
 import { DollarSign, KeyRound } from '@lucide/vue'
 import { computed } from 'vue'
@@ -84,6 +84,10 @@ function updateForm<Key extends keyof ApiKeyFormValue>(key: Key, value: ApiKeyFo
           :disabled="saving"
           @update:model-value="updateForm('groupIds', $event)"
         />
+      </ZFormItem>
+
+      <ZFormItem description="允许该 Key 持有者查看其可用账号的匿名额度信息">
+        <ZSwitch :model-value="form.quotaSharingEnabled" label="允许查询上游额度" :disabled="saving" @update:model-value="updateForm('quotaSharingEnabled', $event)" />
       </ZFormItem>
 
       <ZFormItem label="上游身份">

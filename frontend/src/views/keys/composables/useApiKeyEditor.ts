@@ -7,6 +7,7 @@ import { createApiKey, updateApiKey } from '@/api'
 import { useAsyncAction } from '@/composables/useAsyncAction'
 
 export interface ApiKeyFormValue {
+  quotaSharingEnabled: boolean
   providerRequestProfileOverrides: ProviderRequestProfiles
   customKey: string
   name: string
@@ -38,6 +39,7 @@ export function useApiKeyEditor(options: {
   function openEdit(key: ApiKey) {
     editingKey.value = key
     form.value = {
+      quotaSharingEnabled: key.quotaSharingEnabled ?? false,
       providerRequestProfileOverrides: cloneDeep(key.providerRequestProfileOverrides),
       customKey: '',
       name: key.name,
@@ -73,6 +75,7 @@ export function useApiKeyEditor(options: {
     await savingKeyAction.run(
       async () => {
         const payload = {
+          quotaSharingEnabled: form.value.quotaSharingEnabled,
           name: form.value.name.trim(),
           label: form.value.label.trim() || null,
           groupIds: [...new Set(form.value.groupIds)],
@@ -153,6 +156,7 @@ export function useApiKeyEditor(options: {
 
 function emptyForm(): ApiKeyFormValue {
   return {
+    quotaSharingEnabled: false,
     providerRequestProfileOverrides: {},
     customKey: '',
     name: '',

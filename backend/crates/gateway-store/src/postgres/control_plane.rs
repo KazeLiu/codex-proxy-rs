@@ -152,7 +152,7 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
         key: NewClientApiKey,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
-        self.apply_targeted_mutation(ControlPlaneMutation::CreateClientApiKey(key), audit)
+        self.apply_targeted_mutation(ControlPlaneMutation::CreateClientApiKey(key, None), audit)
             .await
     }
 
@@ -161,7 +161,7 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
         key: UpdateClientApiKeyDetails,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
-        self.apply_targeted_mutation(ControlPlaneMutation::UpdateClientApiKey(key), audit)
+        self.apply_targeted_mutation(ControlPlaneMutation::UpdateClientApiKey(key, None), audit)
             .await
     }
 
@@ -195,14 +195,40 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
 }
 
 enum ControlPlaneMutation {
-    CreateClientApiKey(NewClientApiKey),
-    UpdateClientApiKey(UpdateClientApiKeyDetails),
+    CreateClientApiKey(NewClientApiKey, Option<bool>),
+    UpdateClientApiKey(UpdateClientApiKeyDetails, Option<bool>),
     SetClientApiKeyEnabled { id: String, enabled: bool },
     DeleteClientApiKey(String),
     SetAdminApiKey(Option<String>),
 }
 
 impl PgControlPlaneRepository {
+    pub(super) async fn create_client_api_key_with_quota_sharing(
+        &self,
+        key: NewClientApiKey,
+        sharing: Option<bool>,
+        audit: AdminAuditEvent,
+    ) -> StoreResult<Revision> {
+        self.apply_targeted_mutation(
+            ControlPlaneMutation::CreateClientApiKey(key, sharing),
+            audit,
+        )
+        .await
+    }
+
+    pub(super) async fn update_client_api_key_with_quota_sharing(
+        &self,
+        key: UpdateClientApiKeyDetails,
+        sharing: Option<bool>,
+        audit: AdminAuditEvent,
+    ) -> StoreResult<Revision> {
+        self.apply_targeted_mutation(
+            ControlPlaneMutation::UpdateClientApiKey(key, sharing),
+            audit,
+        )
+        .await
+    }
+
     async fn apply_targeted_mutation(
         &self,
         mutation: ControlPlaneMutation,
@@ -214,15 +240,16 @@ impl PgControlPlaneRepository {
         let result: StoreResult<_> = async {
             let revision = bump_config_revision_in_transaction(&mut transaction).await?;
             match mutation {
-                ControlPlaneMutation::CreateClientApiKey(key) => {
+                ControlPlaneMutation::CreateClientApiKey(key, sharing) => {
                     audit.changed_fields.push(if key.group_ids.is_empty() {
                         "routing_scope:all".to_owned()
                     } else {
                         "routing_scope:groups".to_owned()
                     });
                     insert_client_api_key_in_transaction(&mut transaction, &key).await?;
+                    set_quota_sharing(&mut transaction, &key.id, sharing, &mut audit).await?;
                 }
-                ControlPlaneMutation::UpdateClientApiKey(key) => {
+                ControlPlaneMutation::UpdateClientApiKey(key, sharing) => {
                     let previously_restricted = sqlx::query_scalar::<_, bool>(
                         "select exists(
                            select 1 from client_api_key_groups where client_api_key_id = $1
@@ -244,6 +271,7 @@ impl PgControlPlaneRepository {
                             .push("routing_scope:all->groups".to_owned());
                     }
                     update_client_api_key_in_transaction(&mut transaction, &key).await?;
+                    set_quota_sharing(&mut transaction, &key.id, sharing, &mut audit).await?;
                 }
                 ControlPlaneMutation::SetClientApiKeyEnabled { id, enabled } => {
                     set_client_api_key_enabled_in_transaction(&mut transaction, &id, enabled)
@@ -276,6 +304,26 @@ impl PgControlPlaneRepository {
             }
         }
     }
+}
+
+async fn set_quota_sharing(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: &str,
+    sharing: Option<bool>,
+    audit: &mut AdminAuditEvent,
+) -> StoreResult<()> {
+    if let Some(enabled) = sharing {
+        sqlx::query("update client_api_keys set quota_sharing_enabled=$2 where id=$1")
+            .bind(id)
+            .bind(enabled)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|source| postgres_unavailable("update client key quota sharing", source))?;
+        audit
+            .changed_fields
+            .push("quota_sharing_enabled".to_owned());
+    }
+    Ok(())
 }
 
 async fn load_control_plane_in_transaction(
