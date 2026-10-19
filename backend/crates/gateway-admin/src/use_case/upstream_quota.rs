@@ -53,7 +53,7 @@ impl UpstreamQuotaService {
         if !identity.enabled {
             return Err(QuotaExportError::Unauthorized);
         }
-        if !identity.sharing_enabled {
+        if !identity.sharing.enabled {
             return Err(QuotaExportError::SharingDisabled);
         }
         let provider = self
@@ -66,7 +66,7 @@ impl UpstreamQuotaService {
             .cloned()
             .collect::<Vec<_>>();
         let entries = provider
-            .quota_accounts(&ids)
+            .quota_accounts(&ids, identity.sharing.include_models)
             .await
             .map_err(|_| QuotaExportError::Unavailable)?;
         let derivation = Hkdf::<Sha256>::new(
@@ -82,8 +82,15 @@ impl UpstreamQuotaService {
                 .expand(&info, &mut public_id)
                 .map_err(|_| QuotaExportError::Unavailable)?;
             entry.id = hex::encode(public_id);
-            // 不沿用账号名、邮箱或远端自定义名称，避免多级转发泄露身份
-            entry.label = format!("上游账号 {}", accounts.len() + 1);
+            // 每一跳独立执行当前 Key 的披露策略，名称仅在管理员明确授权时沿用
+            if !identity.sharing.include_names {
+                entry.label = format!("上游账号 {}", accounts.len() + 1);
+            }
+            if !identity.sharing.include_models {
+                entry.models = None;
+            } else if let Some(models) = &mut entry.models {
+                models.retain(|model| policy.account_scope().allows_model(&source, model));
+            }
             accounts.push(entry);
         }
         let response = QuotaResponse {

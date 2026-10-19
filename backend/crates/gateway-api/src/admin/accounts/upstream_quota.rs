@@ -74,6 +74,7 @@ pub(super) async fn attach_upstream(
                 UpstreamQuotaAccountView {
                     id: entry.id,
                     label: entry.label,
+                    models: entry.models,
                     status: entry.status,
                     observed_at: entry.observed_at.as_ref().map(|at| time.rfc3339(at)),
                     observed_at_display: time.relative_optional(entry.observed_at, now),

@@ -414,6 +414,7 @@ pub struct AccountUpstreamQuotaView {
 pub struct UpstreamQuotaAccountView {
     pub id: String,
     pub label: String,
+    pub models: Option<Vec<String>>,
     pub status: gateway_protocol::quota::QuotaObservationStatus,
     pub observed_at: Option<String>,
     pub observed_at_display: String,

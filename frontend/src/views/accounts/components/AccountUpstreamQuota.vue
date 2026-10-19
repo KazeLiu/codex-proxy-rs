@@ -41,7 +41,7 @@ async function handleToggle(event: Event) {
 
 <template>
   <div class="grid min-w-0 gap-1.5" @click.stop>
-    <details v-if="current?.accounts.length" class="group min-w-0" @toggle="handleToggle">
+    <details v-if="current?.accounts.length" open class="group min-w-0" @toggle="handleToggle">
       <summary class="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 rounded-cp text-cp-xs font-emphasis text-cp-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-cp-control-outline [&::-webkit-details-marker]:hidden">
         <span>上游账号 {{ current.accounts.length }} 个</span>
         <span class="flex shrink-0 items-center gap-1 text-cp-text-tertiary">

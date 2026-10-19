@@ -51,6 +51,7 @@ export interface AccountQuota {
 export interface UpstreamQuotaAccount {
   id: string
   label: string
+  models: string[] | null
   status: 'observed' | 'unknown' | 'stale'
   observedAt: string | null
   observedAtDisplay: string

@@ -31,7 +31,10 @@ pub trait ClientKeyService: Send + Sync {
     async fn quota_sharing_settings(
         &self,
         _ids: &[ClientApiKeyId],
-    ) -> Result<std::collections::BTreeMap<String, bool>, AdminError> {
+    ) -> Result<
+        std::collections::BTreeMap<String, crate::model::upstream_quota::QuotaSharingSettings>,
+        AdminError,
+    > {
         Ok(std::collections::BTreeMap::new())
     }
 
@@ -39,9 +42,9 @@ pub trait ClientKeyService: Send + Sync {
         &self,
         context: &MutationContext,
         command: CreateClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
     ) -> Result<CreatedClientKey, AdminError> {
-        if sharing.is_some() {
+        if !sharing.is_empty() {
             return Err(AdminError::unavailable("当前存储不支持额度共享设置"));
         }
         self.create(context, command).await
@@ -51,9 +54,9 @@ pub trait ClientKeyService: Send + Sync {
         &self,
         context: &MutationContext,
         command: UpdateClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
     ) -> Result<ClientKeyMutation, AdminError> {
-        if sharing.is_some() {
+        if !sharing.is_empty() {
             return Err(AdminError::unavailable("当前存储不支持额度共享设置"));
         }
         self.update(context, command).await
@@ -123,7 +126,10 @@ impl ClientKeyService for DefaultClientKeyService {
     async fn quota_sharing_settings(
         &self,
         ids: &[ClientApiKeyId],
-    ) -> Result<std::collections::BTreeMap<String, bool>, AdminError> {
+    ) -> Result<
+        std::collections::BTreeMap<String, crate::model::upstream_quota::QuotaSharingSettings>,
+        AdminError,
+    > {
         self.store
             .quota_sharing_settings(ids)
             .await
@@ -198,14 +204,15 @@ impl ClientKeyService for DefaultClientKeyService {
         context: &MutationContext,
         command: CreateClientKey,
     ) -> Result<CreatedClientKey, AdminError> {
-        self.create_with_quota_sharing(context, command, None).await
+        self.create_with_quota_sharing(context, command, Default::default())
+            .await
     }
 
     async fn create_with_quota_sharing(
         &self,
         context: &MutationContext,
         command: CreateClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
     ) -> Result<CreatedClientKey, AdminError> {
         crate::model::client_keys::validate_group_ids(&command.group_ids)
             .map_err(|_| AdminError::invalid("Client API Key 分组不合法"))?;
@@ -252,14 +259,15 @@ impl ClientKeyService for DefaultClientKeyService {
         context: &MutationContext,
         command: UpdateClientKey,
     ) -> Result<ClientKeyMutation, AdminError> {
-        self.update_with_quota_sharing(context, command, None).await
+        self.update_with_quota_sharing(context, command, Default::default())
+            .await
     }
 
     async fn update_with_quota_sharing(
         &self,
         context: &MutationContext,
         command: UpdateClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
     ) -> Result<ClientKeyMutation, AdminError> {
         crate::model::client_keys::validate_group_ids(&command.group_ids)
             .map_err(|_| AdminError::invalid("Client API Key 分组不合法"))?;

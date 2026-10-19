@@ -338,7 +338,8 @@ pub trait ClientKeyStore: Send + Sync {
     async fn quota_sharing_settings(
         &self,
         _ids: &[gateway_core::policy::ClientApiKeyId],
-    ) -> AdminStoreResult<BTreeMap<String, bool>> {
+    ) -> AdminStoreResult<BTreeMap<String, crate::model::upstream_quota::QuotaSharingSettings>>
+    {
         Ok(BTreeMap::new())
     }
 
@@ -352,10 +353,10 @@ pub trait ClientKeyStore: Send + Sync {
     async fn create_client_key_with_quota_sharing(
         &self,
         command: NewClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
         context: &MutationContext,
     ) -> AdminStoreResult<(Revision, ClientKeyRecord)> {
-        if sharing.is_some() {
+        if !sharing.is_empty() {
             return Err(AdminStoreError::new(
                 AdminStoreErrorKind::Unavailable,
                 "client API key",
@@ -368,10 +369,10 @@ pub trait ClientKeyStore: Send + Sync {
     async fn update_client_key_with_quota_sharing(
         &self,
         command: UpdateClientKey,
-        sharing: Option<bool>,
+        sharing: crate::model::upstream_quota::QuotaSharingUpdate,
         context: &MutationContext,
     ) -> AdminStoreResult<(Revision, ClientKeyRecord)> {
-        if sharing.is_some() {
+        if !sharing.is_empty() {
             return Err(AdminStoreError::new(
                 AdminStoreErrorKind::Unavailable,
                 "client API key",

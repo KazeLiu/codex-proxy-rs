@@ -561,7 +561,7 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 `fetch_upstream_quota`，即可在账号额度位置展开上游子账号。Key 持有者无需管理员权限
 
 `GET /v1/quota` 使用与 `/v1/usage` 相同的 Bearer Key 认证和 request 中间件。仅返回该 Key 授权范围内
-已启用的 OpenAI 账号；额度耗尽、冷却或并发占满的账号仍保留。查询不执行推理准入、扣费、预算窗口开启或主动上游刷新，
+已启用的 OpenAI 账号；额度耗尽、冷却或并发占满的账号仍保留。停用账号及其额度、模型列表不向下游导出。查询不执行推理准入、扣费、预算窗口开启或主动上游刷新，
 Key 预算耗尽后仍可查询。接口不接受查询参数或请求体，响应带 `Cache-Control: no-store`
 
 ```json
@@ -594,14 +594,17 @@ Key 预算耗尽后仍可查询。接口不接受查询参数或请求体，响�
 这是 CPR 网关间的扩展协议，不是 OpenAI 标准接口。单账号也使用 `accounts[]`；API Key 账号已有子额度时展开为平铺条目，
 没有数据或未开启获取时仍保留 `unknown` 条目，不从混合账号池中消失。空数组表示没有可导出的条目，不表示额度耗尽
 
-`id` 在同一导出方和 Key 范围内稳定匿名化，`label` 为匿名名称；不返回邮箱、内部账号 ID、连接地址或凭据。
+`id` 在同一导出方和 Key 范围内稳定匿名化，`label` 默认使用匿名名称。Key 开启 `quotaSharingIncludeNames` 后保留本地账号名称或上游已提供的名称，名称可能包含邮箱等身份信息；内部账号 ID、连接地址和凭据不对外披露。
 `status` 为 `observed`、`unknown` 或 `stale`，只说明观测状态，不是账号调度状态；`unknown` 必须为
 `observedAt: null`、`windows: []`。其他状态保留原始观测时间，多级转发不以获取时间替代它
+
+可选 `models` 是已缓存的账号模型 ID 列表，按账号模型限制过滤；省略或 `null` 表示未提供，空数组表示已知列表为空。
+模型列表不会触发实时目录查询，也不从混合账号池的模型并集推断单账号模型。多级转发保留子账号的模型限制，每一跳按当前 Key 的披露选项裁剪名称和模型列表
 
 窗口 `key` 在账号内唯一，`group`、`label` 为分组和名称；`role` 为 `primary`、`secondary`、`monthly` 或 `null`，
 `windowSeconds` 为实际时长或 `null`，不从角色猜测周期。`usedPercent` 是 0–100 的已用百分比，`null` 表示未知；
 `resetAt` 为 RFC3339 时间或 `null`，`limitReached` 为触顶事实。可选 `limitId`、`limitName` 保留模型或限额分类。
-除这两个可选字段外，字段允许为 `null` 不代表可省略；同版本未知附加字段会被忽略
+除 `models`、`limitId`、`limitName` 外，字段允许为 `null` 不代表可省略；同版本未知附加字段会被忽略
 
 缺失或无效 Key 返回 `401`；共享未开启返回 `403 quota_sharing_disabled`；不合法的查询返回
 `400 invalid_quota_query`；存储不可用返回 `503 quota_unavailable`。完整响应上限 1 MiB，超过时返回
@@ -614,7 +617,7 @@ Key 预算耗尽后仍可查询。接口不接受查询参数或请求体，响�
 
 管理端 `account.quota.upstream` 在已启用且开启获取的 API Key 账号上返回子额度及 `fetchedAt`、`lastAttemptAt`、
 安全错误分类和对应展示文字。它不混入原 `quota.windows`，也不改变本地请求用量或调度状态。
-未开启获取、已停用的 API Key 账号和 OAuth 账号不返回该字段
+未开启获取、已停用的 API Key 账号和 OAuth 账号不返回该字段。`accounts[].models` 为模型 ID 列表或 `null`
 
 ### Codex Live 语音通话
 
@@ -1433,8 +1436,15 @@ HTTP 返回 `403` 和 `image_generation_disabled`，WebSocket 每个 `response.c
 
 创建字段为 `name`、可选 `label`、`groupIds`、`maxConcurrency`、`requestsPerMinute`、可选
 `dailyLimitUsd`、`weeklyLimitUsd`、`customKey` 和 `providerRequestProfileOverrides`。更新请求携带 `id`，不接受 `customKey`。
-创建和更新还接受可选布尔值 `quotaSharingEnabled`，列表返回同名字段。新 Key 默认关闭，更新时省略或 `null` 保留当前值；
-共享设置与名称、分组和限额在同一事务提交，并保留审计，不改变该 Key 的推理权限。
+创建和更新还接受以下可选布尔字段，列表返回同名字段；更新时省略或 `null` 保留当前值：
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `quotaSharingEnabled` | `false` | 允许查询授权范围内的上游额度 |
+| `quotaSharingIncludeNames` | `false` | 传递账号名称 |
+| `quotaSharingIncludeModels` | `false` | 传递已缓存的账号模型列表 |
+
+名称和模型列表选项仅在额度共享开启时生效，关闭共享仍保留各项选择。共享设置与名称、分组和限额在同一事务提交，并保留审计，不改变该 Key 的推理权限。
 `groupIds` 必须显式提交：空数组派生 `routingScope: "all"`，非空数组派生
 `routingScope: "groups"`。响应同时返回分组引用 `groups`，以及从当前有效账号池派生、仅供展示的
 `providerKinds`。创建和 reveal 响应会返回完整明文 Key，调用方

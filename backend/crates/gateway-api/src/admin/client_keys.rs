@@ -13,6 +13,7 @@ use gateway_admin::model::client_keys::{
     CreateClientKey, CreatedClientKey, DeleteClientKey, ResetClientKeyBudget, SetClientKeyEnabled,
     SortDirection, UpdateClientKey,
 };
+use gateway_admin::model::upstream_quota::QuotaSharingUpdate;
 use gateway_core::{
     engine::budget::ClientBudgetLimits,
     metering::Decimal,
@@ -153,6 +154,8 @@ impl ClientKeySort {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateClientKeyRequest {
     quota_sharing_enabled: Option<bool>,
+    quota_sharing_include_names: Option<bool>,
+    quota_sharing_include_models: Option<bool>,
     #[serde(default)]
     provider_request_profile_overrides: ProviderRequestProfileOverrides,
     openai_client_profile_override: Option<serde_json::Map<String, serde_json::Value>>,
@@ -219,6 +222,8 @@ impl CreateClientKeyRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateClientKeyRequest {
     quota_sharing_enabled: Option<bool>,
+    quota_sharing_include_names: Option<bool>,
+    quota_sharing_include_models: Option<bool>,
     #[serde(default)]
     provider_request_profile_overrides: ProviderRequestProfileOverrideUpdates,
     #[serde(default, deserialize_with = "deserialize_profile_override")]
@@ -337,6 +342,8 @@ impl ClientKeyMutationRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ClientKeyView {
     quota_sharing_enabled: bool,
+    quota_sharing_include_names: bool,
+    quota_sharing_include_models: bool,
     provider_request_profile_overrides: ProviderRequestProfileOverrides,
     /// 固定兼容字段；值始终从 provider_request_profile_overrides 派生
     openai_client_profile_override: Option<serde_json::Map<String, serde_json::Value>>,
@@ -388,6 +395,8 @@ impl From<(ClientKeyRecord, crate::time::TimePresenter)> for ClientKeyView {
             xai_client_profile_override: provider_request_profile_overrides.get("xai").cloned(),
             provider_request_profile_overrides,
             quota_sharing_enabled: false,
+            quota_sharing_include_names: false,
+            quota_sharing_include_models: false,
             id: record.id.to_string(),
             name: record.name,
             label: record.label,
@@ -920,7 +929,10 @@ where
     let mut data =
         ClientKeyListData::try_from((result, time)).map_err(|_| AdminError::internal())?;
     for key in &mut data.items {
-        key.quota_sharing_enabled = settings.get(&key.id).copied().unwrap_or(false);
+        let sharing = settings.get(&key.id).copied().unwrap_or_default();
+        key.quota_sharing_enabled = sharing.enabled;
+        key.quota_sharing_include_names = sharing.include_names;
+        key.quota_sharing_include_models = sharing.include_models;
     }
     Ok(AdminResponse::new(StatusCode::OK, AdminEnvelope::ok(data)))
 }
@@ -933,7 +945,11 @@ async fn create_client_key<S>(
 where
     S: SessionState + Send + Sync,
 {
-    let sharing = payload.quota_sharing_enabled;
+    let sharing = QuotaSharingUpdate {
+        enabled: payload.quota_sharing_enabled,
+        include_names: payload.quota_sharing_include_names,
+        include_models: payload.quota_sharing_include_models,
+    };
     let command = payload.into_command().map_err(map_wire_error)?;
     let result = state
         .admin_services()
@@ -981,7 +997,11 @@ async fn update_client_key<S>(
 where
     S: SessionState + Send + Sync,
 {
-    let sharing = payload.quota_sharing_enabled;
+    let sharing = QuotaSharingUpdate {
+        enabled: payload.quota_sharing_enabled,
+        include_names: payload.quota_sharing_include_names,
+        include_models: payload.quota_sharing_include_models,
+    };
     let command = payload.into_command().map_err(map_wire_error)?;
     mutation_response(
         state

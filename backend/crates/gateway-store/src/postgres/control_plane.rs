@@ -152,8 +152,11 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
         key: NewClientApiKey,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
-        self.apply_targeted_mutation(ControlPlaneMutation::CreateClientApiKey(key, None), audit)
-            .await
+        self.apply_targeted_mutation(
+            ControlPlaneMutation::CreateClientApiKey(key, Default::default()),
+            audit,
+        )
+        .await
     }
 
     async fn update_client_api_key(
@@ -161,8 +164,11 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
         key: UpdateClientApiKeyDetails,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
-        self.apply_targeted_mutation(ControlPlaneMutation::UpdateClientApiKey(key, None), audit)
-            .await
+        self.apply_targeted_mutation(
+            ControlPlaneMutation::UpdateClientApiKey(key, Default::default()),
+            audit,
+        )
+        .await
     }
 
     async fn set_client_api_key_enabled(
@@ -195,9 +201,18 @@ impl ControlPlaneRepository for PgControlPlaneRepository {
 }
 
 enum ControlPlaneMutation {
-    CreateClientApiKey(NewClientApiKey, Option<bool>),
-    UpdateClientApiKey(UpdateClientApiKeyDetails, Option<bool>),
-    SetClientApiKeyEnabled { id: String, enabled: bool },
+    CreateClientApiKey(
+        NewClientApiKey,
+        gateway_admin::model::upstream_quota::QuotaSharingUpdate,
+    ),
+    UpdateClientApiKey(
+        UpdateClientApiKeyDetails,
+        gateway_admin::model::upstream_quota::QuotaSharingUpdate,
+    ),
+    SetClientApiKeyEnabled {
+        id: String,
+        enabled: bool,
+    },
     DeleteClientApiKey(String),
     SetAdminApiKey(Option<String>),
 }
@@ -206,7 +221,7 @@ impl PgControlPlaneRepository {
     pub(super) async fn create_client_api_key_with_quota_sharing(
         &self,
         key: NewClientApiKey,
-        sharing: Option<bool>,
+        sharing: gateway_admin::model::upstream_quota::QuotaSharingUpdate,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
         self.apply_targeted_mutation(
@@ -219,7 +234,7 @@ impl PgControlPlaneRepository {
     pub(super) async fn update_client_api_key_with_quota_sharing(
         &self,
         key: UpdateClientApiKeyDetails,
-        sharing: Option<bool>,
+        sharing: gateway_admin::model::upstream_quota::QuotaSharingUpdate,
         audit: AdminAuditEvent,
     ) -> StoreResult<Revision> {
         self.apply_targeted_mutation(
@@ -309,19 +324,33 @@ impl PgControlPlaneRepository {
 async fn set_quota_sharing(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: &str,
-    sharing: Option<bool>,
+    sharing: gateway_admin::model::upstream_quota::QuotaSharingUpdate,
     audit: &mut AdminAuditEvent,
 ) -> StoreResult<()> {
-    if let Some(enabled) = sharing {
-        sqlx::query("update client_api_keys set quota_sharing_enabled=$2 where id=$1")
-            .bind(id)
-            .bind(enabled)
-            .execute(&mut **transaction)
-            .await
-            .map_err(|source| postgres_unavailable("update client key quota sharing", source))?;
-        audit
-            .changed_fields
-            .push("quota_sharing_enabled".to_owned());
+    if !sharing.is_empty() {
+        sqlx::query(
+            "update client_api_keys set
+            quota_sharing_enabled=coalesce($2, quota_sharing_enabled),
+            quota_sharing_include_names=coalesce($3, quota_sharing_include_names),
+            quota_sharing_include_models=coalesce($4, quota_sharing_include_models)
+            where id=$1",
+        )
+        .bind(id)
+        .bind(sharing.enabled)
+        .bind(sharing.include_names)
+        .bind(sharing.include_models)
+        .execute(&mut **transaction)
+        .await
+        .map_err(|source| postgres_unavailable("update client key quota sharing", source))?;
+        for (value, field) in [
+            (sharing.enabled, "quota_sharing_enabled"),
+            (sharing.include_names, "quota_sharing_include_names"),
+            (sharing.include_models, "quota_sharing_include_models"),
+        ] {
+            if value.is_some() {
+                audit.changed_fields.push(field.to_owned());
+            }
+        }
     }
     Ok(())
 }

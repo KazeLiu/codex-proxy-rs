@@ -15,8 +15,39 @@ pub struct AccountUpstreamQuota {
 
 pub struct QuotaExportIdentity {
     pub enabled: bool,
-    pub sharing_enabled: bool,
+    pub sharing: QuotaSharingSettings,
     pub secret: SecretString,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuotaSharingSettings {
+    pub enabled: bool,
+    pub include_names: bool,
+    pub include_models: bool,
+}
+
+impl Default for QuotaSharingSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            include_names: false,
+            include_models: false,
+        }
+    }
+}
+
+/// 省略的字段保留当前策略，供完整 Key 编辑与既有调用共用事务
+#[derive(Debug, Clone, Copy, Default)]
+pub struct QuotaSharingUpdate {
+    pub enabled: Option<bool>,
+    pub include_names: Option<bool>,
+    pub include_models: Option<bool>,
+}
+
+impl QuotaSharingUpdate {
+    pub fn is_empty(&self) -> bool {
+        self.enabled.is_none() && self.include_names.is_none() && self.include_models.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]

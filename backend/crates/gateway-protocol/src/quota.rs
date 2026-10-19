@@ -19,6 +19,8 @@ pub struct QuotaResponse {
 pub struct QuotaAccount {
     pub id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<String>>,
     pub status: QuotaObservationStatus,
     #[serde(deserialize_with = "required_nullable")]
     pub observed_at: Option<DateTime<Utc>>,
@@ -83,6 +85,15 @@ impl QuotaResponse {
             {
                 return Err(InvalidQuotaResponse);
             }
+            if let Some(models) = &account.models {
+                let mut seen = BTreeSet::new();
+                if models
+                    .iter()
+                    .any(|model| !valid_text(model) || !seen.insert(model))
+                {
+                    return Err(InvalidQuotaResponse);
+                }
+            }
             let mut keys = BTreeSet::new();
             for window in &account.windows {
                 if !valid_text(&window.key)
@@ -115,6 +126,7 @@ impl QuotaAccount {
         Self {
             id,
             label,
+            models: None,
             status: QuotaObservationStatus::Unknown,
             observed_at: None,
             windows: Vec::new(),

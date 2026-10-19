@@ -154,6 +154,7 @@ pub trait ProviderAdmin: Send + Sync {
     async fn quota_accounts(
         &self,
         _accounts: &[ProviderAccountId],
+        _include_models: bool,
     ) -> Result<Vec<(ProviderAccountId, gateway_protocol::quota::QuotaAccount)>, ProviderAdminError>
     {
         Ok(Vec::new())

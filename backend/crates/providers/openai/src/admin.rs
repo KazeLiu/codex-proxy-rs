@@ -130,6 +130,22 @@ impl OpenAiAdminProvider {
             .ok_or_else(|| provider_admin_error(ProviderAdminErrorKind::NotFound))
     }
 
+    fn quota_account_models(
+        &self,
+        account: &ProviderAccount,
+    ) -> Result<Option<Vec<String>>, ProviderAdminError> {
+        Ok(self
+            .catalog
+            .cached_account_models(account)
+            .map_err(map_catalog_error)?
+            .map(|models| {
+                models
+                    .into_iter()
+                    .filter(|model| account.model_access().allows(model))
+                    .collect()
+            }))
+    }
+
     async fn preserve_existing_installation_id(
         &self,
         mut incoming: NewProviderAccount,
@@ -180,6 +196,7 @@ impl ProviderAdmin for OpenAiAdminProvider {
     async fn quota_accounts(
         &self,
         ids: &[ProviderAccountId],
+        include_models: bool,
     ) -> Result<Vec<(ProviderAccountId, gateway_protocol::quota::QuotaAccount)>, ProviderAdminError>
     {
         use gateway_protocol::quota::{
@@ -195,7 +212,7 @@ impl ProviderAdmin for OpenAiAdminProvider {
         let mut entries = Vec::new();
         for account in accounts
             .into_iter()
-            .filter(|account| account.enabled() && allowed.contains(account.id()))
+            .filter(|account| allowed.contains(account.id()))
         {
             let id = account.id().clone();
             if account.authentication_kind() == crate::credential::CODEX_AUTHENTICATION_KIND_API_KEY
@@ -204,18 +221,23 @@ impl ProviderAdmin for OpenAiAdminProvider {
                     && !snapshot.forwarding_blocked
                     && !snapshot.accounts.is_empty()
                 {
-                    entries.extend(
-                        snapshot
-                            .accounts
-                            .iter()
-                            .cloned()
-                            .map(|entry| (id.clone(), entry)),
-                    );
+                    entries.extend(snapshot.accounts.iter().cloned().map(|mut entry| {
+                        if include_models {
+                            if let Some(models) = &mut entry.models {
+                                models.retain(|model| account.model_access().allows(model));
+                            }
+                        } else {
+                            entry.models = None;
+                        }
+                        (id.clone(), entry)
+                    }));
                 } else {
-                    entries.push((
-                        id.clone(),
-                        QuotaAccount::unknown(id.as_str().to_owned(), "上游账号".to_owned()),
-                    ));
+                    let mut entry =
+                        QuotaAccount::unknown(id.as_str().to_owned(), account.name().to_owned());
+                    if include_models {
+                        entry.models = self.quota_account_models(&account)?;
+                    }
+                    entries.push((id.clone(), entry));
                 }
                 continue;
             }
@@ -227,10 +249,12 @@ impl ProviderAdmin for OpenAiAdminProvider {
                 })
                 .await?;
             let Some(observed_at) = quota.observed_at else {
-                entries.push((
-                    id.clone(),
-                    QuotaAccount::unknown(id.as_str().to_owned(), "上游账号".to_owned()),
-                ));
+                let mut entry =
+                    QuotaAccount::unknown(id.as_str().to_owned(), account.name().to_owned());
+                if include_models {
+                    entry.models = self.quota_account_models(&account)?;
+                }
+                entries.push((id.clone(), entry));
                 continue;
             };
             let windows = quota
@@ -257,7 +281,12 @@ impl ProviderAdmin for OpenAiAdminProvider {
                 id.clone(),
                 QuotaAccount {
                     id: id.as_str().to_owned(),
-                    label: "上游账号".to_owned(),
+                    label: account.name().to_owned(),
+                    models: if include_models {
+                        self.quota_account_models(&account)?
+                    } else {
+                        None
+                    },
                     status: QuotaObservationStatus::Observed,
                     observed_at: Some(observed_at),
                     windows,
