@@ -57,9 +57,6 @@ function selectKimiQuery(plan: 'payg' | 'coding', region: 'cn' | 'intl') {
     </ZFormItem>
     <ZFormItem label="用量查询">
       <ZSegmented v-model="balanceQuery" aria-label="用量查询类型" :options="balanceQueryOptions" :disabled="disabled" />
-      <p v-if="form.balance_query !== 'disabled'" class="m-0 mt-2 text-cp-xs text-cp-text-secondary">
-        添加后查询一次，启用的账号每 5 分钟自动更新
-      </p>
     </ZFormItem>
     <template v-if="kimiSelection">
       <ZFormItem label="Kimi 套餐">
