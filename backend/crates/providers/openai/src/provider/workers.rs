@@ -225,8 +225,7 @@ impl OpenAiQuotaTask {
             .list_for_provider(&provider)
             .await
             .map_err(|error| {
-                WorkerTaskError::safe("API Key balance accounts are unavailable")
-                    .with_source(error)
+                WorkerTaskError::safe("API Key balance accounts are unavailable").with_source(error)
             })?;
         // 复用额度 worker 的巡检和租约，单独保留主动查询间隔，避免每轮请求余额接口
         *last_refresh = Some(Instant::now());
@@ -236,12 +235,9 @@ impl OpenAiQuotaTask {
                 && account.authentication_kind()
                     == crate::credential::CODEX_AUTHENTICATION_KIND_API_KEY
         }) {
-            if let Err(error) = crate::admin::balance::account_balance(
-                self.accounts.as_ref(),
-                account.id(),
-                true,
-            )
-            .await
+            if let Err(error) =
+                crate::admin::balance::account_balance(self.accounts.as_ref(), account.id(), true)
+                    .await
             {
                 // 单账号失败不触发整轮短退避，按正常五分钟周期继续查询
                 tracing::warn!(
@@ -295,10 +291,8 @@ impl ScheduledTask for OpenAiQuotaTask {
                 return Ok(());
             }
             let synchronize = async {
-                let (quota, balance) = tokio::join!(
-                    self.quota.synchronize(),
-                    self.refresh_api_key_balances(),
-                );
+                let (quota, balance) =
+                    tokio::join!(self.quota.synchronize(), self.refresh_api_key_balances());
                 match quota {
                     Ok(summary) if summary.has_operational_failures() => {
                         tracing::warn!(
