@@ -36,7 +36,7 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
 
 <template>
   <div class="box-border grid min-h-16.5 w-full min-w-0 content-center gap-1.5 py-1.5">
-    <template v-if="account.authenticationKind === 'api_key'">
+    <template v-if="account.authenticationKind === 'api_key' && summaryEntries.length === 0">
       <span
         class="flex min-w-0 items-baseline gap-1 font-mono leading-none tabular-nums"
         title="本地累计总 Token"

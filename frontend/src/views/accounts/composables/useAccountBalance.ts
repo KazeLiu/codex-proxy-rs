@@ -19,10 +19,13 @@ export function useAccountBalance(account: Ref<Account>, onRefreshed: () => void
       )
       if (!request.isCurrent(requestId))
         return
+      const observationChanged = balance.value !== undefined && result.balance?.observedAt !== balance.value?.observedAt
+      const percentageWindowsMissing = account.value.quota.windows.length === 0
+        && result.balance?.entries.some(entry => entry.unit === '%')
       if (result.balance?.observedAt !== balance.value?.observedAt)
         request.error.value = ''
       balance.value = result.balance
-      if (refresh)
+      if (refresh || observationChanged || percentageWindowsMissing)
         onRefreshed()
     }
     catch (cause) {

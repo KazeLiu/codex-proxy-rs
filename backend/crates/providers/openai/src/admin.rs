@@ -709,7 +709,11 @@ impl ProviderAdmin for OpenAiAdminProvider {
             if refresh {
                 return Err(provider_admin_error(ProviderAdminErrorKind::Unsupported));
             }
-            return Ok(project_quota(None, &account));
+            let balance =
+                balance::account_balance(self.accounts.as_ref(), &account_id, false).await?;
+            let mut quota = balance::project_quota(balance)?;
+            quota.limit_reached = account.quota().is_exhausted();
+            return Ok(quota);
         }
         let snapshot = if refresh {
             let snapshot = Some(

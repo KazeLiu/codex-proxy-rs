@@ -67,9 +67,6 @@ function selectKimiQuery(plan: 'payg' | 'coding', region: 'cn' | 'intl') {
       </ZFormItem>
       <ZFormItem label="Kimi 地区">
         <ZSegmented v-model="kimiRegion" aria-label="Kimi 地区" :options="kimiRegionOptions" :disabled="disabled" />
-        <p class="m-0 mt-2 text-cp-xs text-cp-text-secondary">
-          按套餐和地区查询 Kimi 官方接口，不使用 Base URL
-        </p>
       </ZFormItem>
     </template>
   </div>

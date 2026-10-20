@@ -20,6 +20,7 @@ pub struct AccountBalanceEntry {
     pub unlimited: bool,
     pub is_valid: bool,
     pub invalid_message: Option<String>,
+    pub window_seconds: Option<u64>,
     pub reset_at: Option<DateTime<Utc>>,
     pub details: Vec<AccountBalanceDetail>,
 }

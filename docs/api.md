@@ -1038,6 +1038,9 @@ Coding 额度的 `unit` 为 `%`，
 `remaining` 和 `used` 分别表示剩余、已用百分比，保留两位小数以内，`total` 为 `"100"`。
 5 小时窗口来自 `limits[].detail`，周窗口来自 `usage`，仅显示上游实际提供的窗口
 
+百分比额度同时投影到账号的 `quota.windows`，首页活跃账号的 `usageWindow` 返回代表窗口，均使用已用比例
+金额余额仍由 `balance.entries` 提供，不转换为百分比窗口
+
 DeepSeek 和 Sub2API 查询地址与账号 Base URL 同源，移除末尾 `/v1` 后追加上表路径，保留已有路径前缀。
 `GET /api/admin/accounts/balance` 只读取已保存结果，`POST /api/admin/accounts/balance/refresh`
 手动访问上游。Coding 查询超时为 15 秒，其他查询为 10 秒，不自动重试。

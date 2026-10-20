@@ -6,6 +6,9 @@ use chrono::{DateTime, Utc};
 use gateway_admin::model::account_balance::{
     AccountBalance, AccountBalanceDetail, AccountBalanceEntry,
 };
+use gateway_admin::model::provider_credentials::{
+    ProviderQuota, ProviderQuotaWindow, QuotaLocalUsageAttribution,
+};
 use gateway_admin::ports::provider::{ProviderAdminError, ProviderAdminErrorKind};
 use gateway_core::account::{
     OpaqueProviderData, ProviderAccountId, ProviderAccountStore, QuotaObservation,
@@ -16,6 +19,57 @@ use serde_json::{Number, Value};
 use crate::credential::{ApiKeyBalanceQuery, CodexCredentialCodec, CodexCredentialData};
 
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
+
+pub(super) fn project_quota(
+    balance: Option<AccountBalance>,
+) -> Result<ProviderQuota, ProviderAdminError> {
+    let Some(balance) = balance else {
+        return Ok(super::empty_quota());
+    };
+    let windows = balance
+        .entries
+        .into_iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.unit == "%" && entry.is_valid)
+        .map(|(index, entry)| {
+            let used_percent = entry
+                .used
+                .as_deref()
+                .ok_or_else(invalid_response)?
+                .parse::<f64>()
+                .map_err(|_| invalid_response())?;
+            Ok(ProviderQuotaWindow {
+                key: format!("api_key_balance:{index}"),
+                group: if entry.window_seconds.is_some() {
+                    "shortTerm"
+                } else {
+                    "other"
+                }
+                .to_owned(),
+                label: entry.label,
+                limit_id: Some("api_key_balance".to_owned()),
+                limit_name: None,
+                role: None,
+                local_usage_attribution: if entry.window_seconds.is_some() {
+                    QuotaLocalUsageAttribution::AccountWide
+                } else {
+                    QuotaLocalUsageAttribution::Unavailable
+                },
+                window_seconds: entry.window_seconds,
+                used_percent: Some(used_percent),
+                reset_at: entry.reset_at,
+                limit_reached: used_percent >= 100.0,
+                local_usage: None,
+                provider_data: None,
+            })
+        })
+        .collect::<Result<_, ProviderAdminError>>()?;
+    Ok(ProviderQuota {
+        observed_at: balance.observed_at,
+        windows,
+        ..super::empty_quota()
+    })
+}
 
 fn error(message: &'static str) -> ProviderAdminError {
     ProviderAdminError::new(ProviderAdminErrorKind::BadGateway).with_public_message(message)
@@ -210,6 +264,7 @@ fn entry(label: &str, unit: &str) -> AccountBalanceEntry {
         unlimited: false,
         is_valid: true,
         invalid_message: None,
+        window_seconds: None,
         reset_at: None,
         details: Vec::new(),
     }
@@ -239,12 +294,12 @@ fn parse_kimi_coding(value: &Value) -> Result<Vec<AccountBalanceEntry>, Provider
     if let Some(limits) = value["limits"].as_array() {
         for limit in limits {
             if let Some(detail) = limit.get("detail") {
-                entries.push(kimi_quota_entry(detail, "5 小时额度")?);
+                entries.push(kimi_quota_entry(detail, "5 小时额度", 5 * 60 * 60)?);
             }
         }
     }
     if let Some(usage) = value.get("usage") {
-        entries.push(kimi_quota_entry(usage, "周额度")?);
+        entries.push(kimi_quota_entry(usage, "周额度", 7 * 24 * 60 * 60)?);
     }
     if entries.is_empty() {
         return Err(invalid_response());
@@ -255,6 +310,7 @@ fn parse_kimi_coding(value: &Value) -> Result<Vec<AccountBalanceEntry>, Provider
 fn kimi_quota_entry(
     detail: &Value,
     label: &str,
+    window_seconds: u64,
 ) -> Result<AccountBalanceEntry, ProviderAdminError> {
     let limit = kimi_quota_number(&detail["limit"])?;
     if limit <= 0.0 {
@@ -271,6 +327,7 @@ fn kimi_quota_entry(
     result.remaining = Some(kimi_percentage(100.0 - used_percent));
     result.used = Some(kimi_percentage(used_percent));
     result.total = Some("100".to_owned());
+    result.window_seconds = Some(window_seconds);
     result.reset_at = kimi_reset_at(&detail["resetTime"])?;
     Ok(result)
 }
