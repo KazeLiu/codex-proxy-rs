@@ -297,7 +297,7 @@ HTTP 总入口统一包裹原生路由，`dispatch_http` 复用同一路由与�
 各入口共用同一业务实现，业务方法内部调用不重复进入 `service` 组合。
 其他管理接口复用既有 HTTP 路由，不要求按内部方法另建服务目录；既有账号、Key 等资源回调不自动进入 `service` 组合
 
-`quota` 提供已有额度快照、Provider 查询设置、主动刷新、Client Key 分享设置和按授权范围过滤的导出。透传 HTTP 响应由请求中间件插件提供，最低宿主版本为 `3.29.8`；类型、权限、错误与调用示例见[额度查询与分享](quota.md)
+`quota` 提供已有额度快照、Provider 查询设置、主动刷新、Client Key 分享设置和按授权范围过滤的导出。透传 HTTP 响应由请求中间件插件提供，最低宿主版本为 `3.30.1`；类型、权限、错误与调用示例见[额度查询与分享](quota.md)
 
 `Load` 返回完整运行设置与 `config_revision`。`ReplaceRuntimeSettings::from(settings)` 保留该版本并构造更新命令；
 `Replace` 接收 `(MutationContext, ReplaceRuntimeSettings)`，通过已有校验、事务、审计和快照发布保存设置。
