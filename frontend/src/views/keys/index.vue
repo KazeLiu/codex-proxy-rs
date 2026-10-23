@@ -6,6 +6,7 @@ import { ref, shallowRef, watch } from 'vue'
 
 import { useI18n } from 'vue-i18n'
 import ApiKeyConfigModal from '@/components/ApiKeyConfigModal.vue'
+import ClientImportModal from '@/components/ClientImportModal.vue'
 import LastUsedAtCell from '@/components/LastUsedAtCell.vue'
 import { useAccountGroupCatalog } from '@/composables/useAccountGroupCatalog'
 import { usePageSelection } from '@/composables/usePageSelection'
@@ -58,15 +59,18 @@ const {
   selectedUseKey,
   showCreatedKeyModal,
   createdKey,
+  showImportKeyModal,
+  selectedImportKey,
   revealingKeyIds,
   openAiBaseUrl,
   showCreatedKey,
   clearCreatedKey,
   copyToClipboard,
   copyApiKey,
-  importCreatedKeyToCcs,
+  importCreatedKey,
   openUseKeyModal,
-  importToCcs,
+  openImportKeyModal,
+  importSelectedKey,
 } = useApiKeyUse()
 
 const {
@@ -202,7 +206,7 @@ watch(
                 @edit="openEdit"
                 @reset-budget="openBudgetReset"
                 @delete="requestDeleteKey"
-                @import-ccs="importToCcs"
+                @import-client="openImportKeyModal"
                 @toggle="handleToggleStatus"
                 @use="openUseKeyModal"
               />
@@ -233,7 +237,7 @@ watch(
       v-model="showCreatedKeyModal"
       :created-key="createdKey"
       @copy="copyToClipboard"
-      @import-ccs="importCreatedKeyToCcs"
+      @import-client="importCreatedKey"
       @after-leave="clearCreatedKey"
     />
 
@@ -249,6 +253,12 @@ watch(
       :api-base-url="openAiBaseUrl"
       @copy="copyToClipboard"
       @after-leave="selectedUseKey = null"
+    />
+
+    <ClientImportModal
+      v-model="showImportKeyModal"
+      @select="importSelectedKey"
+      @after-leave="selectedImportKey = null"
     />
 
     <ZConfirmDialog

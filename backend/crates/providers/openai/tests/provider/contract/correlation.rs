@@ -1,4 +1,4 @@
-//! 账号追踪域的稳定性、HTTP/WS 一致性、父子引用与工具端点归属回归
+//! 账号追踪域的稳定性、轮次原值透传、HTTP/WS 一致性与工具端点归属回归
 
 use super::*;
 
@@ -39,6 +39,7 @@ fn payload(websocket: bool) -> ProtocolPayload {
         "model":"gpt-5.4", "input":input,
         "prompt_cache_key":"custom-cache-key", "client_metadata":{
             "session_id":"source-session", "thread_id":"source-thread", "turn_id":"source-turn",
+            "x-client-turn-id":"source-turn",
             "x-codex-window-id":"source-window", "x-codex-parent-thread-id":"source-session",
             "x-codex-turn-metadata":full.to_string(),
             "ws_request_header_traceparent":"00-11111111111111111111111111111111-2222222222222222-01",
@@ -50,6 +51,7 @@ fn payload(websocket: bool) -> ProtocolPayload {
         ("thread_id".into(), json!("source-thread")),
         ("turn_metadata".into(), json!(metadata().to_string())),
         ("opaque_request_headers".into(), json!([
+            ["x-client-turn-id",STANDARD.encode("source-turn")],
             ["traceparent",STANDARD.encode("00-11111111111111111111111111111111-2222222222222222-01")],
             ["tracestate",STANDARD.encode("vendor=source")]
         ])),
@@ -57,7 +59,7 @@ fn payload(websocket: bool) -> ProtocolPayload {
 }
 
 #[tokio::test]
-async fn account_correlation_is_stable_across_transports_and_changes_only_with_account() {
+async fn account_correlation_preserves_turns_across_transports_and_account_switches() {
     let stores = [
         Arc::new(MemoryAccountStore::default()),
         Arc::new(MemoryAccountStore::default()),
@@ -140,7 +142,6 @@ async fn account_correlation_is_stable_across_transports_and_changes_only_with_a
             for (field, original) in [
                 ("session_id", "source-session"),
                 ("thread_id", "source-thread"),
-                ("turn_id", "source-turn"),
             ] {
                 assert_scoped_id(flat[field].as_str().unwrap(), original);
                 assert_eq!(flat[field], header[field]);
@@ -148,10 +149,16 @@ async fn account_correlation_is_stable_across_transports_and_changes_only_with_a
             }
             assert_eq!(headers["session-id"].to_str().unwrap(), flat["session_id"]);
             assert_eq!(headers["thread-id"].to_str().unwrap(), flat["thread_id"]);
+            assert_eq!(headers["x-client-turn-id"], "source-turn");
+            assert_eq!(flat["x-client-turn-id"], "source-turn");
+            assert_eq!(flat["turn_id"], "source-turn");
+            for metadata in [&header, &full] {
+                assert_eq!(metadata["turn_id"], "source-turn");
+                assert_eq!(metadata["parent_turn_id"], "source-turn");
+                assert_eq!(metadata["root_turn_id"], "source-turn");
+            }
             assert_eq!(full["parent_thread_id"], flat["session_id"]);
             assert_eq!(full["forked_from_thread_id"], flat["session_id"]);
-            assert_eq!(full["parent_turn_id"], flat["turn_id"]);
-            assert_eq!(full["root_turn_id"], flat["turn_id"]);
             assert_eq!(full["window_id"], full["context_window_id"]);
             assert!(header.get("tool_namespaces_info").is_none());
             assert_eq!(full["tool_namespaces_info"]["inventory"], "body-only");
@@ -162,7 +169,7 @@ async fn account_correlation_is_stable_across_transports_and_changes_only_with_a
                 json!({"turn_id":flat["turn_id"], "content_item_kinds":["additional_content.codex_git_state"]}),
             );
             let previous_turn = &input[1]["internal_chat_message_metadata_passthrough"]["turn_id"];
-            assert_scoped_id(previous_turn.as_str().unwrap(), "source-previous-turn");
+            assert_eq!(previous_turn, "source-previous-turn");
             assert_ne!(previous_turn, &flat["turn_id"]);
             let mut expected_history = account_isolation::isolation_history();
             for (index, item) in expected_history
@@ -176,11 +183,11 @@ async fn account_correlation_is_stable_across_transports_and_changes_only_with_a
                     .unwrap()
                     .entry("internal_chat_message_metadata_passthrough")
                     .or_insert_with(|| json!({}));
-                metadata["turn_id"] = if index == 3 {
-                    flat["turn_id"].clone()
+                metadata["turn_id"] = json!(if index == 3 {
+                    "source-turn"
                 } else {
-                    previous_turn.clone()
-                };
+                    "source-previous-turn"
+                });
             }
             assert_eq!(json!(&input[1..]), expected_history);
             let document =
@@ -224,11 +231,11 @@ async fn account_correlation_is_stable_across_transports_and_changes_only_with_a
     assert_eq!(captures[4], captures[5]);
     assert_ne!(captures[0].0, captures[4].0);
     assert_ne!(captures[0].1, captures[4].1);
-    assert_ne!(captures[0].2, captures[4].2);
+    assert_eq!(captures[0].2, captures[4].2);
 }
 
 #[tokio::test]
-async fn image_generation_and_edit_share_the_selected_account_turn_identity() {
+async fn image_generation_and_edit_preserve_the_client_turn_identity() {
     let store = Arc::new(MemoryAccountStore::default());
     create_account(&store, "acct_provider_contract").await;
     let server = MockServer::start().await;
@@ -263,7 +270,7 @@ async fn image_generation_and_edit_share_the_selected_account_turn_identity() {
     }
     let requests = server.received_requests().await.unwrap();
     let first = &requests[0].headers["x-codex-image-turn-id"];
-    assert_scoped_id(first.to_str().unwrap(), "source-turn");
+    assert_eq!(first, "source-turn");
     for request in &requests {
         assert_eq!(request.body.as_slice(), body.as_ref());
         assert_eq!(&request.headers["x-codex-image-turn-id"], first);

@@ -18,6 +18,8 @@ export function useApiKeyUse() {
   const showCreatedKeyModal = shallowRef(false)
   const createdKey = shallowRef('')
   const createdKeyName = shallowRef('')
+  const showImportKeyModal = shallowRef(false)
+  const selectedImportKey = shallowRef<ApiKey | null>(null)
 
   function showCreatedKey(key: string, name: string) {
     createdKey.value = key
@@ -27,7 +29,7 @@ export function useApiKeyUse() {
 
   const openAiBaseUrl = `${resolveServiceRootUrl()}/v1`
 
-  function importCreatedKeyToCcs() {
+  function importCreatedKey() {
     if (!createdKey.value)
       return
 
@@ -45,7 +47,16 @@ export function useApiKeyUse() {
     })
   }
 
-  function importToCcs(apiKey: ApiKey) {
+  function openImportKeyModal(apiKey: ApiKey) {
+    revealRequest.invalidate()
+    selectedImportKey.value = apiKey
+    showImportKeyModal.value = true
+  }
+
+  function importSelectedKey() {
+    const apiKey = selectedImportKey.value
+    if (!apiKey)
+      return
     return withPlaintextKey(apiKey, (key) => {
       window.location.href = buildCodexCcSwitchImportDeeplink({
         apiKey: key,
@@ -93,6 +104,7 @@ export function useApiKeyUse() {
 
   onScopeDispose(() => {
     selectedUseKey.value = null
+    selectedImportKey.value = null
     clearCreatedKey()
   })
 
@@ -101,14 +113,17 @@ export function useApiKeyUse() {
     selectedUseKey,
     showCreatedKeyModal,
     createdKey,
+    showImportKeyModal,
+    selectedImportKey,
     revealingKeyIds: revealingKeys.ids,
     openAiBaseUrl,
     showCreatedKey,
     clearCreatedKey,
     copyToClipboard,
     copyApiKey,
-    importCreatedKeyToCcs,
+    importCreatedKey,
     openUseKeyModal,
-    importToCcs,
+    openImportKeyModal,
+    importSelectedKey,
   }
 }

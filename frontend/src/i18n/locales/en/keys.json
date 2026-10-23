@@ -4,7 +4,10 @@
       "description": "Save or merge the configuration below and then restart Codex",
       "platform": "Platform",
       "toggleWebSocket": "Switch WebSocket configuration",
-      "importCcSwitch": "Add to CC Switch",
+      "importTo": "Import to",
+      "selectImportTool": "Choose a tool to import into",
+      "ccSwitchDescription": "Manage AI client configurations",
+      "viewOnGitHub": "View {name} on GitHub",
       "copiedToClipboard": "Copied to clipboard",
       "fullApiKeyNotAvailable": "Full API key not available",
       "title": "Use API key"
@@ -40,9 +43,8 @@
     },
     "created": {
       "apiKeyCreated": "API key created",
-      "description": "Copy the API key or import it into CC Switch",
+      "description": "Copy the API key or import it into a client",
       "accessNotice": "This key grants gateway access, share it only with trusted callers",
-      "copyKey": "Copy key",
       "iHaveSaved": "I have saved"
     },
     "filters": {

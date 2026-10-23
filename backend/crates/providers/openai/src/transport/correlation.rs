@@ -7,21 +7,18 @@ use sha2::{Digest, Sha256};
 use super::automatic_context::{locate_contexts, rewrite_git_context};
 use super::request::serialize_ascii_turn_metadata;
 
+// 轮次及父子轮次引用保留客户端原值，避免改变官方轮次身份与 UUIDv7 语义
 const ID_FIELDS: &[&str] = &[
     "session_id",
     "thread_id",
-    "turn_id",
     "window_id",
     "context_window_id",
     "parent_thread_id",
-    "parent_turn_id",
-    "root_turn_id",
     "forked_from_thread_id",
     "conversation_id",
     "x-codex-window-id",
     "x-codex-parent-thread-id",
     "x-client-request-id",
-    "x-client-turn-id",
     "codexWindowId",
     "parentThreadId",
 ];
@@ -32,14 +29,13 @@ const TRACE_FIELDS: &[&str] = &[
     "ws_request_header_traceparent",
     "ws_request_header_tracestate",
 ];
+// Live 的 x-session-id 与 voice-session-id 是业务会话引用，必须原样传递
 const ID_HEADERS: &[&str] = &[
     "session-id",
     "thread-id",
     "x-codex-window-id",
     "x-codex-parent-thread-id",
     "x-client-request-id",
-    "x-client-turn-id",
-    "x-codex-image-turn-id",
 ];
 
 fn scoped_id(installation_id: &str, original: &str) -> String {
@@ -205,16 +201,6 @@ pub(super) fn scope_request(
     let Some(installation_id) = installation_id else {
         return;
     };
-    // 输入项的轮次引用与请求 metadata 共用账号域，保留 item/call ID 和业务元数据
-    if let Some(Value::Array(input)) = body.get_mut("input") {
-        for item in input {
-            if let Some(Value::Object(metadata)) =
-                item.get_mut("internal_chat_message_metadata_passthrough")
-            {
-                map_fields(metadata, installation_id, &["turn_id"]);
-            }
-        }
-    }
     // 只处理官方自动 Git 上下文的关联字段，不扫描普通用户输入和工具输出
     let Ok(targets) = locate_contexts(body, true, || Ok(())) else {
         return;
@@ -228,11 +214,7 @@ pub(super) fn scope_request(
         }
         let _ = rewrite_git_context(text, 1024 * 1024, |value| {
             Ok(value.as_object_mut().map_or(0, |object| {
-                map_fields(
-                    object,
-                    installation_id,
-                    &["sessionId", "threadId", "clientUserMessageId"],
-                )
+                map_fields(object, installation_id, &["sessionId", "threadId"])
             }))
         });
     }

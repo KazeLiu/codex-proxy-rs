@@ -16,7 +16,7 @@ defineProps<{
 
 const emit = defineEmits<{
   use: [apiKey: ApiKey]
-  importCcs: [apiKey: ApiKey]
+  importClient: [apiKey: ApiKey]
   toggle: [apiKey: ApiKey]
   delete: [apiKey: ApiKey]
   edit: [apiKey: ApiKey]
@@ -52,18 +52,18 @@ const { t } = useI18n({ useScope: 'global' })
         </ZIconButton>
       </template>
       <template #default="{ close }">
-        <div class="w-44 p-1.5">
+        <div class="w-36 p-1.5">
           <ZMenuItem @click.stop="(close(), emit('resetBudget', apiKey))">
             <template #icon>
               <RotateCcw class="size-3.5 text-cp-text-quaternary" />
             </template>
             {{ t('keys.actions.resetUsedCredit') }}
           </ZMenuItem>
-          <ZMenuItem :disabled="revealing" @click.stop="(close(), emit('importCcs', apiKey))">
+          <ZMenuItem :disabled="revealing" @click.stop="(close(), emit('importClient', apiKey))">
             <template #icon>
               <Upload class="size-3.5 text-cp-text-quaternary" />
             </template>
-            {{ t('keys.configuration.importCcSwitch') }}
+            {{ t('keys.configuration.importTo') }}
           </ZMenuItem>
           <ZMenuItem :loading="updatingStatus" @click.stop="(close(), emit('toggle', apiKey))">
             <template #icon>

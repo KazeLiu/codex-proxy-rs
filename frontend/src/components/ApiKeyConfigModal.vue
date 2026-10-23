@@ -6,6 +6,7 @@ import { Apple, Copy, Monitor, Upload } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { buildCodexCcSwitchImportDeeplink, buildCodexConfig, CODEX_WEBSOCKET_ENABLED_BY_DEFAULT } from '@/utils/client'
+import ClientImportModal from './ClientImportModal.vue'
 
 const props = defineProps<{
   title?: string
@@ -18,11 +19,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   copy: [text: string]
+  afterLeave: []
 }>()
 
 const { t } = useI18n({ useScope: 'global' })
 
 const open = defineModel<boolean>({ default: false })
+const showImport = shallowRef(false)
 
 const activePlatform = shallowRef('unix')
 const websocketEnabled = shallowRef(CODEX_WEBSOCKET_ENABLED_BY_DEFAULT)
@@ -44,7 +47,7 @@ const codexConfig = computed(() => buildCodexConfig({
   websocketEnabled: websocketEnabled.value,
 }))
 
-function importToCcs() {
+function importToClient() {
   if (!keyValue.value)
     return
   window.location.href = buildCodexCcSwitchImportDeeplink({
@@ -61,6 +64,7 @@ function importToCcs() {
     :title="title ?? t('keys.configuration.title')"
     :description="t('keys.configuration.description')"
     width="48rem"
+    @closed="showImport = false; emit('afterLeave')"
   >
     <div class="flex flex-col gap-5">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -103,13 +107,14 @@ function importToCcs() {
     </div>
 
     <template #footer>
-      <ZButton :disabled="!keyValue" @click="importToCcs">
+      <ZButton :disabled="!keyValue" @click="showImport = true">
         <Upload class="size-4" />
-        {{ t('keys.configuration.importCcSwitch') }}
+        {{ t('keys.configuration.importTo') }}
       </ZButton>
       <ZButton type="primary" @click="open = false">
         {{ t('common.actions.close') }}
       </ZButton>
     </template>
   </ZDialog>
+  <ClientImportModal v-if="open" v-model="showImport" @select="importToClient" />
 </template>

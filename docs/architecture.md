@@ -477,6 +477,9 @@ OpenAI 模型目录用于发现，不因目录缺项拒绝请求；管理员配�
   会话别名只规范化请求头，不清除正文身份字段；未知业务扩展与响应诊断头不受影响，字段见
   [Responses 合同](api.md#3-openai-数据面与模型目录)。Grok 专属请求标记和已知指令开场白的兼容只在
   `downstream/grok.rs` 内判断，且仅用于 Codex/OAuth 上游；普通请求的提示词、工具及业务正文不做品牌清洗
+- Live 共用 OpenAI 的头部身份、下游环境和传输边界，业务扩展不使用固定白名单。
+  引导、sideband 与 hangup 由 Provider 在选定或加载钉住账号后统一处理出站关联标识；
+  API 保留原始入站事实，Core 只传递头值字节和通话归属，具体合同见 [Codex Live 语音通话](api.md#codex-live-语音通话)
 - xAI 是翻译边界。Provider 把 Grok wire 转换为 Responses wire；上游结构化错误的 message/code/type
   可以透出，但账号指纹会先脱敏
 - response ID 是不透明 UTF-8 bytes，不假设 UUID、固定长度或跨 Provider 可复用
@@ -644,8 +647,8 @@ KeyUsageService 从 AuthService 的服务端身份或 Core 的入口认证结果
 ObservabilityStore 的范围查询；数据面额度查询不执行推理准入或开启窗口，入口认证和适用的请求中间件仍会执行。
 API 只输出各入口所需的字段白名单，不复用管理员的宽响应。
 客户端配置通过 ClientKeyStore 显式读取当前会话绑定 Key 的明文，不进入用量响应。
-前端 `/key-usage` 独立于管理布局，不挂载管理员菜单或请求管理接口；配置弹窗和 Codex / CCSwitch
-配置生成逻辑与管理端共用，明文仅在打开弹窗时获取，关闭后清除，不持久化到浏览器
+前端 `/key-usage` 独立于管理布局，不挂载管理员菜单或请求管理接口；配置弹窗、Codex 配置及 CC Switch
+导入链接生成逻辑与管理端共用，明文仅在打开弹窗时获取，关闭后清除，不持久化到浏览器
 
 ## 6. 路由、账号范围与 continuation
 

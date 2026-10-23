@@ -298,13 +298,13 @@ Responses 也不透传 `x-stainless-*`、`Origin`、`Referer`、`sec-ch-ua*` 和
 出站移除下游的 `traceparent`、`tracestate` 及 WS metadata 中对应的
 `ws_request_header_traceparent`、`ws_request_header_tracestate`
 
-会话、线程、轮次、窗口及父子引用在出站时按账号安装身份稳定映射为 UUID；
+会话、线程、窗口及父子线程引用在出站时按账号安装身份稳定映射为 UUID；
 同账号保留引用关系，换账号使用不同标识。HTTP 请求头、正文 metadata、WS 副本及
 已识别的 Desktop 自动 Git 上下文使用一致映射。
-输入项的 `internal_chat_message_metadata_passthrough.turn_id` 同步映射，
-保留历史轮次与当前轮次的引用关系，其余输入项元数据保持不变。
-Images 的 `x-codex-image-turn-id`、turn metadata 和 Search 的会话 `id` 使用同一账号域；
-Search 只替换该 `id` 的原始字节，其余正文保持不变。
+轮次及父子轮次引用保留客户端原值，包括输入项的 `internal_chat_message_metadata_passthrough.turn_id`、
+请求 metadata 中的 `turn_id`、`parent_turn_id`、`root_turn_id`，以及 `x-client-turn-id`、
+Images 的 `x-codex-image-turn-id` 和 Desktop 自动 Git 上下文的 `clientUserMessageId`。
+输入项元数据保持不变。Search 的会话 `id` 按同一账号域映射，只替换该值的原始字节，其余正文保持不变。
 `prompt_cache_key` 同样按账号映射，保留同账号内的缓存共享关系；未提供时不补造。
 续接 response ID、历史 item/call ID、业务正文和未知扩展不参与映射，
 该处理减少显式追踪标识的跨账号复用，不保证会话内容或业务 metadata 无法关联
@@ -614,12 +614,17 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 `application/sdp` / `text/plain` 包装为 `sdp` 字段、`multipart/form-data` 取 `sdp` 与 `session` 两个部分。
 `session.model` 或顶层 `model` 中的 `gpt-realtime` 系模型名归一为 `gpt-live-1-codex`，其余模型原样透传；
 模型字段缺失时按默认语音模型参与检查。归一后的模型参与账号模型权限检查：账号范围整体禁止该模型时
-引导请求按路由错误拒绝，被禁账号不会服务语音通话。语音语义请求头按允许清单转发：`OpenAI-Alpha`、
-`X-Session-Id`、`Session-Id`、`Thread-Id`、`OpenAI-Safety-Identifier`；认证、组织、项目和设备证明等
-身份头不透传，上游账号身份由选中的账号提供
+引导请求按路由错误拒绝，被禁账号不会服务语音通话
 
-引导响应透传上游状态码，并只回传 `Content-Type`、`Location`、`Retry-After`、`X-Request-Id`、
-`OpenAI-Request-Id` 五个响应头；正文按字节透传。sideband 中继不做协议解释：Text/Binary 帧双向透传，
+引导、sideband 与 hangup 的业务扩展头默认透传；认证、账号身份、下游环境与传输头遵守
+[请求头与身份](#请求头与身份)边界。`X-Session-Id`、`Voice-Session-Id` 是 Live 业务会话标识，原样透传。
+`Session-Id`、`Thread-Id` 等已识别追踪标识按选中账号的安装身份稳定映射，同账号各阶段保持一致，
+换账号使用不同标识；客户端 trace 被剥离。
+Live 不继承 Responses 的路由提示与续接状态；turn metadata 中的原账号绑定信息清理后保留其他字段。
+真实 call ID 保留用于钉住账号访问通话。HTTP 业务头保留原始多值字节，sideband 握手沿用 WebSocket 可编码的头值
+
+引导与 hangup 的成功响应透传上游状态码、普通业务响应头和 `Content-Type`，剥离认证、账号身份、Cookie
+及传输字段；正文按字节透传。sideband 中继不做协议解释：Text/Binary 帧双向透传，
 Ping 由网关本地应答，关闭帧保留原关闭码，异常中断投影为正常关闭。同一 call id 只允许一条 sideband，重复加入返回 `409`；
 非创建该通话的 Client Key 访问 sideband 或 hangup 返回 `403`；call id 未知或已过期返回 `404`。
 hangup 不受 sideband 占用限制，通话中可随时挂断；挂断与 sideband 都走钉住账号的出口代理。

@@ -2,19 +2,22 @@
 import { ZButton, ZDialog, ZIconButton } from '@codex-proxy/ui'
 
 import { Copy, Upload } from '@lucide/vue'
+import { shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ClientImportModal from '@/components/ClientImportModal.vue'
 
 defineProps<{ createdKey: string }>()
 
 const emit = defineEmits<{
   copy: [text: string]
-  importCcs: []
+  importClient: []
   afterLeave: []
 }>()
 
 const { t } = useI18n({ useScope: 'global' })
 
 const open = defineModel<boolean>({ default: false })
+const showImport = shallowRef(false)
 </script>
 
 <template>
@@ -24,10 +27,10 @@ const open = defineModel<boolean>({ default: false })
     :description="t('keys.created.description')"
     type="success"
     width="36rem"
-    @closed="emit('afterLeave')"
+    @closed="showImport = false; emit('afterLeave')"
   >
     <div class="flex flex-col gap-4">
-      <div class="rounded-cp border border-cp-warning-border bg-cp-warning-container px-4 py-3">
+      <div class="rounded-cp bg-cp-warning-container px-4 py-3">
         <p class="m-0 text-cp font-semibold text-cp-warning-on-container">
           {{ t('keys.created.accessNotice') }}
         </p>
@@ -48,21 +51,16 @@ const open = defineModel<boolean>({ default: false })
     </div>
 
     <template #footer>
-      <ZButton @click="emit('copy', createdKey)">
-        <template #icon>
-          <Copy class="size-4" />
-        </template>
-        {{ t('keys.created.copyKey') }}
-      </ZButton>
-      <ZButton @click="emit('importCcs')">
+      <ZButton :disabled="!createdKey" @click="showImport = true">
         <template #icon>
           <Upload class="size-4" />
         </template>
-        {{ t('keys.configuration.importCcSwitch') }}
+        {{ t('keys.configuration.importTo') }}
       </ZButton>
       <ZButton type="primary" @click="open = false">
         {{ t('keys.created.iHaveSaved') }}
       </ZButton>
     </template>
   </ZDialog>
+  <ClientImportModal v-if="open" v-model="showImport" @select="emit('importClient')" />
 </template>
