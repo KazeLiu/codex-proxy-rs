@@ -1,7 +1,7 @@
 # Gateway Plugin SDK
 
 用于编写 Codex Proxy 插件的 Rust 合同与可选会话辅助。插件只依赖本包，不依赖宿主 Core、Admin、Store 或 Host。
-SDK 包版本为 `0.1.0`，独立于网关版本，处于实验阶段。能力是否可用取决于宿主支持、清单声明与实际注册
+SDK 包版本为 `0.2.0`，独立于网关版本，处于实验阶段。能力是否可用取决于宿主支持、清单声明与实际注册
 
 清单、进程协议和各项能力分别版本化，当前版本与声明规则统一见[插件清单](docs/manifest.md)
 
@@ -19,7 +19,7 @@ SDK 包版本为 `0.1.0`，独立于网关版本，处于实验阶段。能力�
 | `call::frontend_authentication` | 数据面认证信封、认证器标识与外部 principal 结果 |
 | `call::model` | 宿主模型调用的 canonical 事实、原生 wire 与有界事件编解码 |
 | `call::middleware` | HTTP、WebSocket 消息、公开服务、模型请求及 attempt 的洋葱调用、单次 next 与惰性正文合同 |
-| `call::services` | 公开服务的类型化操作、输入输出及错误合同；`usage` 提供[用量维护与计价](docs/usage-data.md) |
+| `call::services` | 公开服务的类型化操作、输入输出及错误合同；`usage` 提供[用量维护与计价](docs/usage-data.md)，`quota` 提供[额度查询与分享](docs/quota.md) |
 | `call::upstream_adapter` | 内置 OpenAI / xAI 的[受管上游适配器](docs/upstream-adapters.md)注册、执行、出站与续接合同 |
 | `call::policy` | 模型路由、账号调度与重试决策合同 |
 | `call::catalog` | 固定 Provider 的模型别名注册合同 |

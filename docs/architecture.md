@@ -884,6 +884,14 @@ PostgreSQL schema 由迁移目录按编号管理；冻结、升级与校验规�
 credential 与 quota 是两组独立事实：credential refresh 不等于 quota refresh，额度接口的 401/403
 也不能单独证明 refresh token 永久失效
 
+API Key 的 CPR 额度与 Kimi、DeepSeek、Sub2API 余额由 OpenAI Provider 显式配置和解释，查询复用账号当前凭据与出口。
+展示结果共用 `provider_account_upstream_quota_snapshots`，与原生 quota、调度、凭据健康和本地费用账本分离；失败保留可用快照，认证或权限拒绝时停止旧快照下传，成功后恢复。
+现有额度 worker 持有周期刷新与关闭取消，首次查询沿用凭据配置提交后的观察流程；刷新按凭据版本合并，数据库的凭据版本与尝试标识防止迟到结果覆盖新连接
+
+Admin 的额度服务复用 Provider 查询、凭据事务、配置版本、审计及发布，向公开服务注册表提供非秘密快照、查询配置和 Key 分享操作。
+`/v1/quota` 只提供数据面鉴权与现有 request 中间件入口，未被插件接管时返回 404。插件通过公开 `ExportQuota` 服务取得指定 Key 当前授权范围内的额度，由宿主统一执行账号启停、模型策略、披露规则和逐跳匿名化；插件组织 HTTP 响应，不执行推理准入或主动刷新。
+SDK 合同及调用示例见[额度查询与分享](../backend/crates/gateway-plugin/sdk/docs/quota.md)
+
 - OpenAI 支持 OAuth、AT/RT、PAT 和上游 API Key。OAuth 身份来自官方 JWT claims，PAT 经官方身份接口验证，
   不信任导入文档顶层身份字段。RT-only 导入先换取 AT；AT-only、PAT 与 API Key 不参加 OAuth 自动续期。
   输入形态和适用操作见 [账号能力与导入](api.md#账号能力导入与-oauth)

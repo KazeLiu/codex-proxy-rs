@@ -246,24 +246,35 @@ impl ScheduledTask for OpenAiQuotaTask {
             if context.cancellation().is_cancelled() {
                 return Ok(());
             }
-            match self.quota.synchronize().await {
-                Ok(summary) if summary.has_operational_failures() => {
-                    tracing::warn!(
-                        updated = summary.updated,
-                        exhausted = summary.exhausted,
-                        banned = summary.banned,
-                        transient = summary.transient,
-                        stale = summary.stale,
-                        "OpenAI quota cycle contained operational failures"
-                    );
+            let synchronize = async {
+                let (quota, upstream) =
+                    tokio::join!(self.quota.synchronize(), self.quota.refresh_upstream_due());
+                match quota {
+                    Ok(summary) if summary.has_operational_failures() => {
+                        tracing::warn!(
+                            updated = summary.updated,
+                            exhausted = summary.exhausted,
+                            banned = summary.banned,
+                            transient = summary.transient,
+                            stale = summary.stale,
+                            "OpenAI quota cycle contained operational failures"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        return Err(WorkerTaskError::safe("OpenAI quota synchronization failed")
+                            .with_source(error));
+                    }
                 }
-                Ok(_) => {}
-                Err(error) => {
-                    return Err(WorkerTaskError::safe("OpenAI quota synchronization failed")
-                        .with_source(error));
+                if let Err(error) = upstream {
+                    tracing::warn!(kind = ?error.kind(), "upstream quota cycle failed");
                 }
+                Ok(())
+            };
+            tokio::select! {
+                () = context.cancellation().cancelled() => Ok(()),
+                result = synchronize => result,
             }
-            Ok(())
         })
     }
 }

@@ -5,6 +5,7 @@
 //! - [`evidence`]：额度接口错误到凭据/额度事实的分类
 //! - [`recovery`]：各额度窗口独立的恢复基准与访问结论
 
+mod balance;
 mod document;
 pub(crate) mod evidence;
 mod passive;
@@ -13,6 +14,7 @@ mod reset_credits;
 mod scheduling;
 mod service;
 pub(crate) mod snapshot;
+mod upstream;
 mod warmup;
 
 pub use reset_credits::CodexResetCreditsError;
@@ -169,6 +171,12 @@ impl From<gateway_core::error::StoreError> for CodexCredentialQuotaError {
 }
 
 pub struct CodexCredentialQuotaService {
+    upstream_refresh_locks: Mutex<
+        BTreeMap<
+            (ProviderAccountId, gateway_core::account::CredentialRevision),
+            std::sync::Weak<upstream::UpstreamRefreshLock>,
+        >,
+    >,
     repository: CodexCredentialRepository,
     store: Arc<dyn ProviderAccountStore>,
     profile: CodexWireProfileState,

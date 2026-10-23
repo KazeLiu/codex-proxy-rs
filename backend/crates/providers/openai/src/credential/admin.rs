@@ -11,8 +11,8 @@ use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use gateway_core::account::{
     AccountErrorReason, CredentialCasUpdate, CredentialRevision, CredentialState, LoadedCredential,
-    NewProviderAccount, ProviderAccount, ProviderAccountId, ProviderAccountIdentity,
-    ProviderAccountUpdate, QuotaState,
+    NewProviderAccount, PlaintextCredential, ProviderAccount, ProviderAccountId,
+    ProviderAccountIdentity, ProviderAccountUpdate, QuotaState,
 };
 use gateway_core::provider_ports::{
     ProviderLeaseAcquisition, ProviderLeaseGuard, ProviderLeasePort, ProviderLeaseRequest,
@@ -133,7 +133,10 @@ struct ParsedCodexImportAccount {
 #[derive(Debug)]
 enum ParsedCodexAuthentication {
     OAuth(ParsedOAuthAuthentication),
-    ApiKey(ApiKeyCredentialData),
+    ApiKey(
+        ApiKeyCredentialData,
+        gateway_admin::model::upstream_quota::QuotaQueryMode,
+    ),
 }
 
 struct ParsedOAuthAuthentication {
@@ -259,6 +262,10 @@ struct CodexCprApiKeyExportAccount {
     base_url: String,
     api_key: String,
     transport: ResponsesTransport,
+    #[serde(skip_serializing_if = "skip_disabled_quota")]
+    fetch_upstream_quota: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    balance_query: Option<gateway_admin::model::upstream_quota::QuotaQueryMode>,
 }
 
 #[derive(Serialize)]
@@ -414,12 +421,14 @@ impl CodexCredentialAdmin {
         account_id: String,
         name: String,
         data: ApiKeyCredentialData,
+        quota_mode: gateway_admin::model::upstream_quota::QuotaQueryMode,
     ) -> Result<NewProviderAccount, CodexCredentialAdminError> {
         if name.trim().is_empty() {
             return Err(CodexCredentialAdminError::InvalidInput);
         }
         let credential = CodexCredentialCodec::encode_complete(CodexCredentialData::ApiKey(data))
             .map_err(|_| CodexCredentialAdminError::InvalidCredential)?;
+        let credential = super::api_key::with_quota_query_mode(credential, quota_mode);
         let account = ProviderAccount::new(
             ProviderAccountId::new(account_id)
                 .map_err(|_| CodexCredentialAdminError::InvalidInput)?,
@@ -456,9 +465,35 @@ impl CodexCredentialAdmin {
             base_url: String,
             transport: ResponsesTransport,
             api_key: Option<String>,
+            fetch_upstream_quota: Option<bool>,
+            balance_query: Option<gateway_admin::model::upstream_quota::QuotaQueryMode>,
         }
         let rotation: Rotation = serde_json::from_value(material)
             .map_err(|_| CodexCredentialAdminError::InvalidInput)?;
+        use gateway_admin::model::upstream_quota::QuotaQueryMode;
+        let current_mode = super::api_key::quota_query_mode(&current.credential)
+            .map_err(|_| CodexCredentialAdminError::InvalidCredential)?;
+        let fetch_upstream_quota = rotation
+            .fetch_upstream_quota
+            .unwrap_or(current_mode == QuotaQueryMode::Cpr);
+        let balance_query =
+            rotation
+                .balance_query
+                .unwrap_or(if current_mode == QuotaQueryMode::Cpr {
+                    QuotaQueryMode::Disabled
+                } else {
+                    current_mode
+                });
+        if balance_query == QuotaQueryMode::Cpr
+            || (fetch_upstream_quota && balance_query != QuotaQueryMode::Disabled)
+        {
+            return Err(CodexCredentialAdminError::InvalidInput);
+        }
+        let quota_mode = if fetch_upstream_quota {
+            QuotaQueryMode::Cpr
+        } else {
+            balance_query
+        };
         let CodexCredentialData::ApiKey(mut data) =
             CodexCredentialCodec::decode_complete(&current.credential)
                 .map_err(|_| CodexCredentialAdminError::InvalidCredential)?
@@ -472,6 +507,7 @@ impl CodexCredentialAdmin {
         }
         let credential = CodexCredentialCodec::encode_complete(CodexCredentialData::ApiKey(data))
             .map_err(|_| CodexCredentialAdminError::InvalidCredential)?;
+        let credential = super::api_key::with_quota_query_mode(credential, quota_mode);
         let profile = ProviderAccountUpdate {
             account_id: current.account.id().clone(),
             name: current.account.name().to_owned(),
@@ -488,6 +524,7 @@ impl CodexCredentialAdmin {
             None,
         )
         .map_err(|_| CodexCredentialAdminError::InvalidCredential)?
+        .preserving_profile()
         .with_account_state(CredentialState::Ready, SystemTime::now(), None, None);
         Ok(PreparedCodexCredentialRotation {
             profile,
@@ -672,6 +709,8 @@ impl CodexCredentialAdmin {
             }
             let data = CodexCredentialCodec::decode_complete(&item.current.credential)
                 .map_err(|_| CodexCredentialAdminError::InvalidCredential)?;
+            let quota_mode = super::api_key::quota_query_mode(&item.current.credential)
+                .map_err(|_| CodexCredentialAdminError::InvalidCredential)?;
             let common = CodexCprExportCommon {
                 model_access: account.model_access().clone(),
                 id: account.id().as_str().to_owned(),
@@ -699,6 +738,13 @@ impl CodexCredentialAdmin {
                         base_url: data.base_url,
                         api_key: data.api_key,
                         transport: data.transport,
+                        fetch_upstream_quota: quota_mode
+                            == gateway_admin::model::upstream_quota::QuotaQueryMode::Cpr,
+                        balance_query: match quota_mode {
+                            gateway_admin::model::upstream_quota::QuotaQueryMode::Disabled
+                            | gateway_admin::model::upstream_quota::QuotaQueryMode::Cpr => None,
+                            mode => Some(mode),
+                        },
                     })
                 }
 
@@ -1043,13 +1089,14 @@ impl CodexCredentialAdminService {
         for candidate in candidates {
             let account_id = format!("acct_{}", uuid::Uuid::now_v7().simple());
             let authentication = match candidate.authentication {
-                ParsedCodexAuthentication::ApiKey(data) => {
+                ParsedCodexAuthentication::ApiKey(data, quota_mode) => {
                     let mut prepared = CodexCredentialAdmin.prepare_api_key(
                         account_id,
                         candidate
                             .name
                             .unwrap_or_else(|| "OpenAI API Key".to_owned()),
                         data,
+                        quota_mode,
                     )?;
                     prepared.model_access = candidate.model_access;
                     prepared.account = prepared
@@ -1304,7 +1351,16 @@ fn parse_codex_import_account(
         name: first_string(value, &["name", "label"]),
         email: first_string(value, &["email"]).or_else(|| first_string(credentials, &["email"])),
         authentication: if is_api_key_import(value) {
-            ParsedCodexAuthentication::ApiKey(parse_api_key_import(value)?)
+            ParsedCodexAuthentication::ApiKey(
+                parse_api_key_import(value)?,
+                super::api_key::quota_query_mode(&PlaintextCredential::new(
+                    credentials
+                        .as_object()
+                        .cloned()
+                        .ok_or(CodexCredentialAdminError::InvalidInput)?,
+                ))
+                .map_err(|_| CodexCredentialAdminError::InvalidInput)?,
+            )
         } else {
             ParsedCodexAuthentication::OAuth(parse_oauth_import_tokens(value)?)
         },
@@ -1475,6 +1531,10 @@ fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+fn skip_disabled_quota(value: &bool) -> bool {
+    !*value
 }
 
 fn is_api_key_import(value: &Value) -> bool {

@@ -54,6 +54,69 @@ impl ApiKeyCredentialData {
     }
 }
 
+// 查询开关作为 Provider 凭据元数据保存，保留已有公开凭据构造合同
+pub(crate) fn quota_query_mode(
+    credential: &gateway_core::account::PlaintextCredential,
+) -> Result<gateway_admin::model::upstream_quota::QuotaQueryMode, super::CodexCredentialDataError> {
+    use gateway_admin::model::upstream_quota::QuotaQueryMode;
+    let cpr = credential
+        .expose_to_provider()
+        .get("fetch_upstream_quota")
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or(super::CodexCredentialDataError::Invalid)
+        })
+        .transpose()
+        .map(|value| value.unwrap_or(false))?;
+    let balance = credential
+        .expose_to_provider()
+        .get("balance_query")
+        .map(|value| {
+            serde_json::from_value::<QuotaQueryMode>(value.clone())
+                .map_err(|_| super::CodexCredentialDataError::Invalid)
+        })
+        .transpose()?
+        .unwrap_or_default();
+    if balance == QuotaQueryMode::Cpr || (cpr && balance != QuotaQueryMode::Disabled) {
+        return Err(super::CodexCredentialDataError::Invalid);
+    }
+    Ok(if cpr { QuotaQueryMode::Cpr } else { balance })
+}
+
+pub(crate) fn with_quota_query_mode(
+    credential: gateway_core::account::PlaintextCredential,
+    mode: gateway_admin::model::upstream_quota::QuotaQueryMode,
+) -> gateway_core::account::PlaintextCredential {
+    use gateway_admin::model::upstream_quota::QuotaQueryMode;
+    let mut data = credential.into_inner();
+    if mode == QuotaQueryMode::Cpr {
+        data.insert(
+            "fetch_upstream_quota".to_owned(),
+            serde_json::Value::Bool(true),
+        );
+    } else {
+        data.remove("fetch_upstream_quota");
+    }
+    data.remove("balance_query");
+    let query = match mode {
+        QuotaQueryMode::Disabled | QuotaQueryMode::Cpr => None,
+        QuotaQueryMode::Kimi => Some("kimi"),
+        QuotaQueryMode::KimiGlobal => Some("kimi_global"),
+        QuotaQueryMode::KimiCoding => Some("kimi_coding"),
+        QuotaQueryMode::KimiCodingGlobal => Some("kimi_coding_global"),
+        QuotaQueryMode::Deepseek => Some("deepseek"),
+        QuotaQueryMode::Sub2api => Some("sub2api"),
+    };
+    if let Some(query) = query {
+        data.insert(
+            "balance_query".to_owned(),
+            serde_json::Value::String(query.to_owned()),
+        );
+    }
+    gateway_core::account::PlaintextCredential::new(data)
+}
+
 impl fmt::Debug for ApiKeyCredentialData {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

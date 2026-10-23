@@ -722,6 +722,157 @@ impl PgAdminClientKeyStore {
 
 #[async_trait]
 impl ClientKeyStore for PgAdminClientKeyStore {
+    async fn quota_sharing_snapshot(
+        &self,
+        id: &ClientApiKeyId,
+    ) -> AdminStoreResult<Option<gateway_admin::model::upstream_quota::QuotaSharingSnapshot>> {
+        use gateway_admin::model::upstream_quota::{QuotaSharingSettings, QuotaSharingSnapshot};
+        let row: Option<(i64, bool, bool, bool)> = sqlx::query_as(
+            "select r.config_revision, k.quota_sharing_enabled, k.quota_sharing_include_names,
+                    k.quota_sharing_include_models
+             from client_api_keys k cross join runtime_settings r where k.id=$1 and r.id=1",
+        )
+        .bind(id.as_str())
+        .fetch_optional(&self.keys.pool)
+        .await
+        .map_err(|source| {
+            admin_store_error(
+                ENTITY,
+                postgres_unavailable("read quota sharing settings", source),
+            )
+        })?;
+        row.map(|(revision, enabled, include_names, include_models)| {
+            Ok(QuotaSharingSnapshot {
+                client_key_id: id.as_str().to_owned(),
+                config_revision: quota_sharing_revision(revision)?,
+                settings: QuotaSharingSettings {
+                    enabled,
+                    include_names,
+                    include_models,
+                },
+            })
+        })
+        .transpose()
+    }
+
+    async fn update_quota_sharing(
+        &self,
+        command: gateway_admin::model::upstream_quota::UpdateQuotaSharing,
+        context: &MutationContext,
+    ) -> AdminStoreResult<gateway_admin::model::upstream_quota::QuotaSharingSnapshot> {
+        use gateway_admin::model::upstream_quota::{QuotaSharingSettings, QuotaSharingSnapshot};
+        use gateway_admin::ports::store::{AdminStoreError, AdminStoreErrorKind};
+        let map_error = |error| admin_store_error(ENTITY, error);
+        let mut tx = self.keys.pool.begin().await.map_err(|source| {
+            map_error(postgres_unavailable("begin quota sharing update", source))
+        })?;
+        // 与完整 Key 编辑保持相同锁顺序，版本比较和局部写入在同一事务完成
+        let revision: i64 = sqlx::query_scalar(
+            "select config_revision from runtime_settings where id=1 for update",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|source| map_error(postgres_unavailable("lock quota sharing revision", source)))?;
+        let mut config_revision = quota_sharing_revision(revision)?;
+        if config_revision != command.expected_config_revision {
+            return Err(AdminStoreError::new(
+                AdminStoreErrorKind::StaleRevision,
+                ENTITY,
+                "quota sharing configuration changed",
+            ));
+        }
+        let current: Option<(bool, bool, bool)> = sqlx::query_as(
+            "select quota_sharing_enabled, quota_sharing_include_names, quota_sharing_include_models
+             from client_api_keys where id=$1 for update",
+        ).bind(&command.client_key_id).fetch_optional(&mut *tx).await
+            .map_err(|source| map_error(postgres_unavailable("lock quota sharing key", source)))?;
+        let (enabled, include_names, include_models) = current.ok_or_else(|| {
+            map_error(StoreError::NotFound {
+                entity: ENTITY,
+                id: command.client_key_id.clone(),
+                source: None,
+            })
+        })?;
+        let current = QuotaSharingSettings {
+            enabled,
+            include_names,
+            include_models,
+        };
+        if current != command.settings {
+            sqlx::query(
+                "update client_api_keys set quota_sharing_enabled=$2, quota_sharing_include_names=$3,
+                 quota_sharing_include_models=$4, updated_at=now() where id=$1",
+            ).bind(&command.client_key_id).bind(command.settings.enabled)
+                .bind(command.settings.include_names).bind(command.settings.include_models)
+                .execute(&mut *tx).await
+                .map_err(|source| map_error(postgres_unavailable("update quota sharing settings", source)))?;
+            let revision = super::bump_config_revision_in_transaction(&mut tx)
+                .await
+                .map_err(map_error)?;
+            let fields = [
+                (
+                    current.enabled != command.settings.enabled,
+                    "quota_sharing_enabled",
+                ),
+                (
+                    current.include_names != command.settings.include_names,
+                    "quota_sharing_include_names",
+                ),
+                (
+                    current.include_models != command.settings.include_models,
+                    "quota_sharing_include_models",
+                ),
+            ]
+            .into_iter()
+            .filter(|(changed, _)| *changed)
+            .map(|(_, field)| field.to_owned())
+            .collect();
+            super::append_admin_audit_event_in_transaction(
+                &mut tx,
+                mutation_audit(
+                    context,
+                    MutationAuditOperation::ClientApiKeyUpdate,
+                    &command.client_key_id,
+                    fields,
+                ),
+                revision,
+            )
+            .await
+            .map_err(map_error)?;
+            config_revision = admin_revision(revision)?;
+        }
+        tx.commit().await.map_err(|source| {
+            map_error(postgres_unavailable("commit quota sharing update", source))
+        })?;
+        Ok(QuotaSharingSnapshot {
+            client_key_id: command.client_key_id,
+            config_revision,
+            settings: command.settings,
+        })
+    }
+
+    async fn quota_export_identity(
+        &self,
+        id: &ClientApiKeyId,
+    ) -> AdminStoreResult<Option<gateway_admin::model::upstream_quota::QuotaExportIdentity>> {
+        let row: Option<(bool, bool, bool, bool, String)> = sqlx::query_as("select enabled, quota_sharing_enabled, quota_sharing_include_names, quota_sharing_include_models, quota_identity_secret from client_api_keys where id=$1")
+            .bind(id.as_str()).fetch_optional(&self.keys.pool).await
+            .map_err(|source| admin_store_error(ENTITY, postgres_unavailable("read quota export identity", source)))?;
+        Ok(row.map(
+            |(enabled, sharing_enabled, include_names, include_models, secret)| {
+                gateway_admin::model::upstream_quota::QuotaExportIdentity {
+                    enabled,
+                    sharing: gateway_admin::model::upstream_quota::QuotaSharingSettings {
+                        enabled: sharing_enabled,
+                        include_names,
+                        include_models,
+                    },
+                    secret: secrecy::SecretString::from(secret),
+                }
+            },
+        ))
+    }
+
     async fn update_client_key_budget_limits(
         &self,
         command: gateway_admin::model::client_keys::UpdateClientKeyBudgetLimits,
@@ -1021,6 +1172,19 @@ impl ClientKeyStore for PgAdminClientKeyStore {
             .map_err(|error| admin_store_error(ENTITY, error))
             .and_then(admin_revision)
     }
+}
+
+fn quota_sharing_revision(value: i64) -> AdminStoreResult<gateway_admin::model::Revision> {
+    u64::try_from(value)
+        .ok()
+        .and_then(|value| gateway_admin::model::Revision::new(value).ok())
+        .ok_or_else(|| {
+            gateway_admin::ports::store::AdminStoreError::new(
+                gateway_admin::ports::store::AdminStoreErrorKind::Invalid,
+                ENTITY,
+                "invalid quota sharing revision",
+            )
+        })
 }
 
 fn store_client_key_query(

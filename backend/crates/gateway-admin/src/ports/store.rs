@@ -335,6 +335,40 @@ pub trait AuthStore: Send + Sync {
 /// Client API Key 资料读取与管理写入
 #[async_trait]
 pub trait ClientKeyStore: Send + Sync {
+    async fn quota_sharing_snapshot(
+        &self,
+        _id: &gateway_core::policy::ClientApiKeyId,
+    ) -> AdminStoreResult<Option<crate::model::upstream_quota::QuotaSharingSnapshot>> {
+        Err(AdminStoreError::new(
+            AdminStoreErrorKind::Unavailable,
+            "client API key",
+            "quota sharing is not supported",
+        ))
+    }
+
+    async fn update_quota_sharing(
+        &self,
+        _command: crate::model::upstream_quota::UpdateQuotaSharing,
+        _context: &MutationContext,
+    ) -> AdminStoreResult<crate::model::upstream_quota::QuotaSharingSnapshot> {
+        Err(AdminStoreError::new(
+            AdminStoreErrorKind::Unavailable,
+            "client API key",
+            "quota sharing is not supported",
+        ))
+    }
+
+    async fn quota_export_identity(
+        &self,
+        _id: &gateway_core::policy::ClientApiKeyId,
+    ) -> AdminStoreResult<Option<crate::model::upstream_quota::QuotaExportIdentity>> {
+        Err(AdminStoreError::new(
+            AdminStoreErrorKind::Unavailable,
+            "client API key",
+            "quota sharing is not supported",
+        ))
+    }
+
     /// 按已验证的 ID 读取资料，不读取完整明文 Key
     async fn get_client_key(
         &self,

@@ -171,7 +171,11 @@ impl CodexCredentialCodec {
     pub fn decode(
         credential: &PlaintextCredential,
     ) -> Result<CodexRuntimeCredential, CodexCredentialDataError> {
-        let value = Value::Object(credential.expose_to_provider().clone());
+        super::api_key::quota_query_mode(credential)?;
+        let mut object = credential.expose_to_provider().clone();
+        object.remove("fetch_upstream_quota");
+        object.remove("balance_query");
+        let value = Value::Object(object);
         if serde_json::to_vec(&value)
             .map_err(|_| CodexCredentialDataError::Invalid)?
             .len()
@@ -237,7 +241,11 @@ impl CodexCredentialCodec {
     pub fn decode_complete(
         credential: &PlaintextCredential,
     ) -> Result<CodexCredentialData, CodexCredentialDataError> {
-        let value = Value::Object(credential.expose_to_provider().clone());
+        super::api_key::quota_query_mode(credential)?;
+        let mut object = credential.expose_to_provider().clone();
+        object.remove("fetch_upstream_quota");
+        object.remove("balance_query");
+        let value = Value::Object(object);
         let data = serde_json::from_value::<CodexCredentialData>(value)
             .map_err(|_| CodexCredentialDataError::Invalid)?;
         validate(&data)?;
@@ -248,6 +256,7 @@ impl CodexCredentialCodec {
         incoming: &PlaintextCredential,
         existing: &PlaintextCredential,
     ) -> Result<PlaintextCredential, CodexCredentialDataError> {
+        let quota_mode = super::api_key::quota_query_mode(incoming)?;
         let mut incoming = Self::decode_complete(incoming)?;
         let existing = Self::decode_complete(existing)?;
         match (&mut incoming, existing) {
@@ -261,6 +270,7 @@ impl CodexCredentialCodec {
             _ => return Err(CodexCredentialDataError::Invalid),
         }
         Self::encode_complete(incoming)
+            .map(|data| super::api_key::with_quota_query_mode(data, quota_mode))
     }
 }
 

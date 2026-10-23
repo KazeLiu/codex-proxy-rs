@@ -26,6 +26,7 @@ mod use_case;
 pub use use_case::plugins::{PluginDistributionPorts, PluginManagementService, PluginsService};
 
 pub use use_case::key_usage::KeyUsageService;
+pub use use_case::upstream_quota::UpstreamQuotaService;
 
 pub use use_case::{
     account_groups::AccountGroupService,
@@ -478,10 +479,18 @@ async fn initialize_inner(
         pricing_source,
     );
     let usage_data = initialize_usage_data(store.usage_data(), store.settings(), registry.clone());
+    let upstream_quota = initialize_upstream_quota(
+        store.client_keys(),
+        registry.clone(),
+        store.accounts(),
+        snapshot.clone(),
+        published_snapshot.clone(),
+    );
     let mut public_services = public_service::Registry::new(service_middleware);
     public_services.register_settings(&settings)?;
     public_services.register_accounts(&accounts)?;
     public_services.register_usage_data(&usage_data)?;
+    public_services.register_quota(&upstream_quota)?;
     let services = AdminServices {
         timezone,
         public_services: Arc::new(public_services),
@@ -718,5 +727,19 @@ pub fn initialize_usage_data(
 ) -> Arc<dyn UsageDataService> {
     Arc::new(use_case::usage_data::DefaultUsageDataService::new(
         store, settings, providers,
+    ))
+}
+
+/// 服务端与 CLI 共用额度服务，不随命令启动周期刷新任务
+#[must_use]
+pub fn initialize_upstream_quota(
+    keys: Arc<dyn ports::store::ClientKeyStore>,
+    providers: ProviderAdminRegistry,
+    accounts: Arc<dyn ports::store::AccountStore>,
+    snapshot: Arc<dyn SnapshotControl>,
+    published: gateway_core::runtime::RuntimeSnapshotHandle,
+) -> Arc<UpstreamQuotaService> {
+    Arc::new(UpstreamQuotaService::new(
+        keys, providers, accounts, snapshot, published,
     ))
 }

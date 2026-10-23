@@ -36,6 +36,13 @@ impl Registry {
         super::accounts::register(self, service)
     }
 
+    pub fn register_quota(
+        &mut self,
+        service: &Arc<crate::use_case::upstream_quota::UpstreamQuotaService>,
+    ) -> Result<(), AdminError> {
+        super::quota::register(self, service)
+    }
+
     pub(crate) fn register<I, O>(
         &mut self,
         name: &'static str,

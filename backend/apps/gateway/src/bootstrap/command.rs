@@ -130,6 +130,14 @@ async fn execute(
         core.account_probe(),
     );
     or_shutdown!(plugin_runtime, services.register_accounts(&accounts));
+    let quota = gateway_admin::initialize_upstream_quota(
+        store.admin_ports().client_keys(),
+        providers.admin.clone(),
+        store.admin_ports().accounts(),
+        core.snapshot_control(),
+        core.snapshots(),
+    );
+    or_shutdown!(plugin_runtime, services.register_quota(&quota));
     let usage_data = gateway_admin::initialize_usage_data(
         store.admin_ports().usage_data(),
         store.admin_ports().settings(),

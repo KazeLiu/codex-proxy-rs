@@ -577,6 +577,23 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 缺失、非法、已禁用或已删除的 Key 返回 OpenAI 风格 `401` 错误；未知查询参数返回 `400 invalid_usage_query`，
 读取账本失败返回 `503 usage_unavailable`，不会用零余额掩盖故障
 
+### 上游账号额度分享
+
+`GET /v1/quota` 使用与 `/v1/usage` 相同的数据面认证，不接受管理 Cookie、管理 API Key、查询参数或正文。查询只读取已保存的上游展示快照和原生额度，不发起上游请求，不扣费或开启预算窗口；响应带 `Cache-Control: no-store`
+
+此地址是已鉴权的 request 插件中间件入口，需安装、启用并绑定额度透传插件。没有插件响应时返回 `404 quota_plugin_unavailable`，宿主不直接导出额度。插件通过 SDK `ExportQuota` 获取按当前 Key 权限和分享设置过滤后的结果
+
+当前 Key 必须显式开启额度分享，默认关闭。开启后始终提供授权账号额度，账号名称和模型列表分别默认不分享。查询和修改这些设置使用[公开 SDK 额度服务](../backend/crates/gateway-plugin/sdk/docs/quota.md#配置-client-key-分享)，不需要读取明文 Key
+
+响应为 `{ "schemaVersion": 1, "accounts": [...] }`。每个账号包含独立于内部账号 ID 的匿名 `id`、名称或匿名 `label`、可选的 `models`、`status`、`observedAt`、`windows` 和可选的 `balances`；公开类型见 SDK `call::services::quota`
+
+- `status` 为 `observed`、`unknown` 或 `stale`，未知观测时间和窗口值为 `null`，不解释为零额度
+- `windows` 提供百分比窗口、标签、角色、时长、重置时间和触顶标记；`balances` 的金额使用十进制字符串，包含单位、已用／总额、无限额标记及明细，不将金额换算为百分比
+- 只导出当前 Key 已发布授权范围内仍启用的 OpenAI Provider 账号；分组和账号模型策略继续限制模型披露，每一跳重新匿名化并应用名称及模型开关
+- 上游认证或权限拒绝后，旧展示快照停止下传；后续成功获取后恢复。其他查询失败保留旧快照并标记陈旧
+
+无效或停用 Key 返回 `401 invalid_api_key`，未开启分享返回 `403 quota_sharing_disabled`，非法查询返回 `400 invalid_quota_query`；读取失败或响应超过 1 MiB 返回 `503 quota_unavailable`
+
 ### Codex Live 语音通话
 
 语音通话复用数据面 Client Key 鉴权，并按该 Key 的账号分组选路。通话引导是一次性请求，走与其他

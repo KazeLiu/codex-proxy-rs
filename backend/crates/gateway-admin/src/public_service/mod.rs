@@ -2,6 +2,7 @@
 
 mod accounts;
 mod actor;
+mod quota;
 mod registry;
 mod settings;
 mod usage_data;

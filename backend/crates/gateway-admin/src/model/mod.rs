@@ -20,12 +20,14 @@ pub mod plugins;
 pub mod pricing;
 pub mod provider_credentials;
 pub mod proxies;
+pub mod quota;
 pub mod quota_forecast;
 pub mod quota_forecast_sampling;
 pub mod reset_credit_automation;
 pub mod retention;
 pub mod settings;
 pub mod system;
+pub mod upstream_quota;
 pub mod usage_data;
 
 /// 管理用例对外返回的稳定错误分类
