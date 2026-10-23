@@ -102,9 +102,14 @@ fn spawn_process(
     spec: ProcessSpec,
     slot: tokio::sync::OwnedSemaphorePermit,
 ) -> Result<ProcessConnection, ProcessStartError> {
-    let mut child = Command::new(&spec.executable)
-        .current_dir(&spec.directory)
-        .env_clear()
+    let mut command = Command::new(&spec.executable);
+    command.current_dir(&spec.directory).env_clear();
+    // Windows 网络服务依赖 SystemRoot，不能随业务环境一同移除
+    #[cfg(windows)]
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        command.env("SystemRoot", system_root);
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
