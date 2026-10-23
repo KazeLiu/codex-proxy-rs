@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import type { KeyUsageVersion } from '@/api/modules/key-usage'
 import { ZInput, ZScrollbar, ZSelect } from '@codex-proxy/ui'
 import { Search } from '@lucide/vue'
-import { shallowRef } from 'vue'
-import { getKeyUsageVersion } from '@/api/modules/key-usage'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ApiKeyConfigModal from '@/components/ApiKeyConfigModal.vue'
-import AppAboutModal from '@/components/AppAboutModal.vue'
 import RequestHealthTimelineCard from '@/components/usage/RequestHealthTimelineCard.vue'
 import KeyUsageBudget from './components/KeyUsageBudget.vue'
 import KeyUsageHeader from './components/KeyUsageHeader.vue'
@@ -16,30 +14,12 @@ import KeyUsageTrend from './components/KeyUsageTrend.vue'
 import { useKeyConfig } from './composables/useKeyConfig'
 import { useKeyUsage } from './composables/useKeyUsage'
 
+const { t } = useI18n({ useScope: 'global' })
+
 const { period, model, kind, refreshInterval, overview, overviewLoading, overviewError, refreshing, recordsStale, records, refresh, changePageSize, changePage } = useKeyUsage()
 const { items, currentPage, pageSize, total, loading: recordsLoading, error: recordsError } = records
 const { showConfig, configKey, configuring, apiBaseUrl, openConfig, copyConfig } = useKeyConfig()
-const fieldOptions = [{ value: 'model', label: '模型' }]
-const aboutOpen = shallowRef(false)
-const version = shallowRef<KeyUsageVersion | null>(null)
-const versionLoading = shallowRef(false)
-
-async function openAbout() {
-  aboutOpen.value = true
-  if (version.value || versionLoading.value)
-    return
-
-  versionLoading.value = true
-  try {
-    version.value = await getKeyUsageVersion({ silent: true })
-  }
-  catch {
-    // 版本不可用不影响查看项目信息，下次打开时重试。
-  }
-  finally {
-    versionLoading.value = false
-  }
-}
+const fieldOptions = computed(() => [{ value: 'model', label: t('usage.fields.model') }])
 </script>
 
 <template>
@@ -47,12 +27,12 @@ async function openAbout() {
     <ZScrollbar>
       <div class="flex min-h-full w-full flex-col gap-5 p-4 min-[961px]:p-6">
         <div class="flex flex-col gap-2">
-          <KeyUsageHeader v-model:period="period" v-model:refresh-interval="refreshInterval" :name="overview?.key.name" :prefix="overview?.key.prefix" :refreshing="refreshing || overviewLoading" :configuring="configuring" @refresh="refresh" @configure="openConfig" @open-about="openAbout" />
+          <KeyUsageHeader v-model:period="period" v-model:refresh-interval="refreshInterval" :name="overview?.key.name" :prefix="overview?.key.prefix" :refreshing="refreshing || overviewLoading" :configuring="configuring" @refresh="refresh" @configure="openConfig" />
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span v-if="overview" class="text-cp-sm text-cp-text-tertiary">更新于 {{ overview.asOfDisplay }}</span>
+            <span v-if="overview" class="text-cp-sm text-cp-text-tertiary">{{ t('usage.page.updated', { asOfDisplay: overview.asOfDisplay }) }}</span>
             <div class="ml-auto grid w-full min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-2 sm:w-md sm:flex-none">
-              <ZSelect model-value="model" :options="fieldOptions" aria-label="请求明细筛选字段" />
-              <ZInput v-model="model" class="w-full" placeholder="输入筛选内容" aria-label="请求明细筛选内容" :maxlength="128">
+              <ZSelect model-value="model" :options="fieldOptions" :aria-label="t('usage.filters.fieldLabel')" />
+              <ZInput v-model="model" class="w-full" :placeholder="t('usage.filters.enterFilterValue')" :aria-label="t('usage.filters.valueLabel')" :maxlength="128">
                 <template #prefix>
                   <Search class="size-4.5 text-cp-text-tertiary" />
                 </template>
@@ -61,7 +41,7 @@ async function openAbout() {
           </div>
         </div>
         <p v-if="overviewError" role="alert" class="m-0 rounded-cp-lg bg-cp-error-container px-4 py-3 text-cp-sm text-cp-error-text">
-          {{ overviewError }}{{ overview ? '，暂时保留上次结果' : '，请点击顶部刷新重试' }}
+          {{ overviewError }}{{ overview ? t('usage.page.temporarilyRetainLastResult') : t('usage.page.clickRefreshAtTopToTryAgain') }}
         </p>
         <template v-if="overview">
           <KeyUsageSummary :summary="overview.summary" />
@@ -75,7 +55,6 @@ async function openAbout() {
         <KeyUsageRecords v-model:kind="kind" :rows="items" :pagination="{ currentPage, pageSize, total }" :loading="recordsLoading" :error="recordsError" :stale="recordsStale" @page-change="changePage" @page-size-change="changePageSize" />
       </div>
     </ZScrollbar>
-    <ApiKeyConfigModal v-model="showConfig" title="密钥配置" :api-key="configKey" :api-base-url="apiBaseUrl" @copy="copyConfig" @after-leave="configKey = null" />
-    <AppAboutModal v-model="aboutOpen" :version="version" />
+    <ApiKeyConfigModal v-model="showConfig" :title="t('usage.header.keyConfiguration')" :api-key="configKey" :api-base-url="apiBaseUrl" @copy="copyConfig" @after-leave="configKey = null" />
   </main>
 </template>

@@ -1873,7 +1873,7 @@ async fn provider_should_send_the_request_snapshot_location_to_the_upstream() {
         "model": "gpt-5.4",
         "input": [{
             "role": "user",
-            "content": [{"type": "input_text", "text": "<environment_context><timezone>UTC</timezone></environment_context>"}],
+            "content": [{"type": "input_text", "text": "<environment_context><current_date>2026-10-22</current_date><timezone>UTC</timezone></environment_context>"}],
             "internal_chat_message_metadata_passthrough": {
                 "content_item_kinds": ["environments.environment_context"],
                 "create_time": 1789293131.822
@@ -1899,7 +1899,7 @@ async fn provider_should_send_the_request_snapshot_location_to_the_upstream() {
     assert_eq!(
         body.pointer("/input/0/content/0/text"),
         Some(&json!(
-            "<environment_context><timezone>Pacific/Auckland</timezone></environment_context>"
+            "<environment_context><current_date>2026-10-22</current_date><timezone>Pacific/Auckland</timezone></environment_context>"
         ))
     );
     assert_eq!(
@@ -1925,8 +1925,8 @@ async fn provider_should_override_unclassified_time_contexts_over_websocket() {
         }).to_string().into())).await.expect("complete response");
         body
     });
-    let environment = "<environment_context><cwd>/home/example/项目</cwd><timezone>Asia/Shanghai</timezone></environment_context>";
-    let desktop = "<codex_apps_client_time_context><timezone>Asia/Shanghai</timezone></codex_apps_client_time_context>";
+    let environment = "<environment_context><cwd>/home/example/项目</cwd><current_date>2026-10-22</current_date><timezone>Asia/Shanghai</timezone></environment_context>";
+    let desktop = "<codex_apps_client_time_context><timezone>Asia/Shanghai</timezone><current_date>2026-10-21</current_date></codex_apps_client_time_context>";
     let payload = ProtocolPayload::json_object(
         "openai",
         json!({

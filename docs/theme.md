@@ -45,7 +45,7 @@
 - **文案不使用句号和分号**：自行编写的标题、标签、按钮、表单帮助、空状态、提示和错误文案不使用 `。`、句末 `.`、`；` 或 `;`，优先写成短语或简短分句
   需要表达多个要点时，按内容关系拆成字段、短行或列表，不把长段落机械替换成逗号串
   这项约定针对界面文案，URL、版本号、小数、代码、原始日志和用户输入保留原样
-- **说明只补必要信息**：标题、字段值和操作已能表达的内容不再重复，不同时用帮助文字、状态行和说明卡解释同一事实
+- **页面直显以简洁为主**：标题、标签、按钮使用简短明确的名称或动作，说明只补必要信息，不重复标题、字段值和操作已能表达的内容，不同时用多种说明形式解释同一事实
   页面保留当前决策必需的短提示，详细规则、背景原因、示例和低频帮助优先收进已有 Popover 或就近的帮助入口，不把实现细节写成用户教程
   重要说明可以在 Popover 中展开，但影响当前选择的关键限制、错误原因和不可逆后果需在操作处保留简明提示，不能全部藏起来
 - **按内容选择提示方式**：Tooltip 用于短名称或单句补充，Popover 用于需要阅读、多段说明或含链接的内容，复用项目现有组件
@@ -62,9 +62,25 @@
 | 页面头部 | `@codex-proxy/ui` 的 `ZPageHeader`、[系统概览](../frontend/src/views/dashboard/components/DashboardContent.vue) | 简短标题、必要的统计范围或状态、就近操作 |
 | 内容与指标 | `@codex-proxy/ui` 的 `ZCard`、[用量概览卡片](../frontend/src/views/usage/components/UsageSummaryCards.vue) | 可选说明、紧凑摘要、数值与辅助信息的主次 |
 | 表单帮助 | [API Key 账号字段](../frontend/src/views/accounts/components/AccountApiKeyFields.vue) | 直接命名字段，在对应位置提供短提示和示例 |
+| 详细规则 | [自动审批并发帮助](../frontend/src/views/settings/components/ConcurrencyPolicyCard.vue) | 标签旁帮助图标打开 Popover，页面保留短提示，浮层补充规则和示例 |
 | 账号与用量展示 | [账号额度窗口](../frontend/src/components/account/account-usage-window/index.vue)、[共用用量表格](../frontend/src/components/usage/UsageRecordsTable.vue) | 复用后端展示字段和共享 presenter，管理端与 Key 页保持同一展示口径 |
 
 页面查询、表单状态与纯展示逻辑的归属见 [前端模块职责](architecture.md#34-前端模块职责)
+
+## 语言与字体
+
+应用使用 Vue I18n Composition API，语言标识为 `en`、`zh-Hans`、`zh-Hant`。资源按领域存放在 `frontend/src/i18n/locales/`，使用 `领域.功能.用途` 的语义 key，例如 `accounts.connectionTest.description`，三种语言保持相同 key 和具名参数
+
+- 标签、帮助、ARIA、通知和图表显式取消息；列定义、选项和展示投影使用响应式计算，不把翻译结果存进业务数据
+- 完整句子使用具名参数，含组件的消息使用 `I18nT`；数量使用 Vue I18n 复数规则，不拆词拼接
+- 专业缩写在三种语言中保留原样及规范大小写，例如 `TTFT`、`RPM`、`TPM`、`API`、`HTTP`、`WS`、`RC`，直接显示时不翻译或展开，必要的全称和解释放入帮助提示
+- 英文使用句首大写和美式拼写，统一 Account、Proxy、Usage、Rate limit、API key、TTFT 等术语，协议标识和用户值保留原样
+- 繁体中文只转换简体原文的字形，保持措辞与语序，不替换地区用词，例如 `数据 → 數據`、`设置 → 設置`
+- 只翻译应用拥有的文本，具体后端错误、上游诊断、日志和独立插件内容保留原文；固定错误码在请求层映射，业务分类码优先保留后端公开的具体原因，无原因时使用本地兜底文案
+- 侧边栏语言图标展开就地选项，选择后切换并收起；品牌区固定显示 `Codex Proxy`、`Rust build` 和版本号
+- UI 库默认文案由 `ZConfigProvider` 提供，命令式通知通过 `utils/notification.ts` 绑定同一个语言来源，组件约定见 [UI 国际化](../modules/ui/playground/guide/i18n.md)
+
+正文默认使用 Inter Variable，中文及缺失字形按系统无衬线字体栈回退。代码使用 JetBrains Mono Variable，中文由系统字体补齐，不随语言切换额外修改字重。默认值由 UI 库持有，应用负责加载字体包，图表读取同一字体 Token
 
 ## 架构概览
 

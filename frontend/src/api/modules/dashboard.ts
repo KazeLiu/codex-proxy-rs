@@ -42,8 +42,13 @@ export interface DashboardTrendPoint {
   capacityUtilization: number | null
 }
 
+export type DashboardTrendMetric
+  = 'inputTokens' | 'outputTokens' | 'cachedInputTokens'
+    | 'firstTokenP95Ms' | 'latencyP95Ms' | 'outputThroughputP50'
+    | 'errors' | 'successRate' | 'requests'
+
 export interface DashboardTrendSummaryItem {
-  label: string
+  metric: DashboardTrendMetric
   value: string
   ratio: string | null
 }

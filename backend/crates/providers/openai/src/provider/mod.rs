@@ -928,11 +928,7 @@ impl CodexProvider {
             .request_location()
             .or(context.request_location())
         {
-            align_structured_location_fields(
-                upstream_request.body_mut(),
-                chrono::Utc::now(),
-                location,
-            );
+            align_structured_location_fields(upstream_request.body_mut(), location);
         }
         let requirement = transport_requirement(&upstream_request);
         let http_only = lease.transport() == crate::credential::ResponsesTransport::Http;

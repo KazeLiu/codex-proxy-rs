@@ -735,34 +735,34 @@ pub(crate) fn trend_summary_view(
     match kind {
         TrendKind::Usage => vec![
             TrendSummaryView {
-                label: "输入".to_owned(),
+                metric: TrendMetric::InputTokens,
                 value: format_compact_number(summary.input_tokens),
                 ratio: None,
             },
             TrendSummaryView {
-                label: "输出".to_owned(),
+                metric: TrendMetric::OutputTokens,
                 value: format_compact_number(summary.output_tokens),
                 ratio: None,
             },
             TrendSummaryView {
-                label: "缓存".to_owned(),
+                metric: TrendMetric::CachedInputTokens,
                 value: format_compact_number(summary.cached_input_tokens),
                 ratio: None,
             },
         ],
         TrendKind::Latency => vec![
             TrendSummaryView {
-                label: "首字 P95".to_owned(),
+                metric: TrendMetric::FirstTokenP95Ms,
                 value: display_duration_f64(summary.peak_first_token_p95_ms),
                 ratio: None,
             },
             TrendSummaryView {
-                label: "总耗时 P95".to_owned(),
+                metric: TrendMetric::LatencyP95Ms,
                 value: display_duration_f64(summary.peak_latency_p95_ms),
                 ratio: None,
             },
             TrendSummaryView {
-                label: "速率 P50".to_owned(),
+                metric: TrendMetric::OutputThroughputP50,
                 value: summary
                     .minimum_output_throughput_p50
                     .map_or_else(|| "—".to_owned(), |value| format!("{value} tok/s")),
@@ -771,19 +771,19 @@ pub(crate) fn trend_summary_view(
         ],
         TrendKind::Errors => vec![
             TrendSummaryView {
-                label: "错误数".to_owned(),
+                metric: TrendMetric::Errors,
                 value: format_compact_number(summary.service_failure_count),
                 ratio: None,
             },
             TrendSummaryView {
-                label: "成功率".to_owned(),
+                metric: TrendMetric::SuccessRate,
                 value: "—".to_owned(),
                 ratio: summary
                     .success_rate
                     .map(|value| format!("{:.1}%", value * 100.0)),
             },
             TrendSummaryView {
-                label: "总请求".to_owned(),
+                metric: TrendMetric::Requests,
                 value: format_compact_number(summary.request_count),
                 ratio: None,
             },

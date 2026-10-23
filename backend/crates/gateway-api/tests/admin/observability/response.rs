@@ -1464,3 +1464,69 @@ async fn usage_status_query_accepts_three_modes_and_rejects_unknown_values() {
         }
     }
 }
+
+#[tokio::test]
+async fn dashboard_summary_should_identify_metrics_without_localized_labels() {
+    use axum::{
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+    };
+    use chrono::Duration;
+    use gateway_admin::model::observability::{DashboardObservation, TimeRange};
+    use gateway_api::admin::observability;
+    use tower::ServiceExt as _;
+
+    use crate::admin::{AdminTestFixture, AdminTestState};
+
+    let fixture = AdminTestFixture::new().await;
+    fixture.auth.insert_session("valid-session");
+    let now = Utc::now();
+    *fixture.dashboard_observation.lock().unwrap() = Some(DashboardObservation {
+        yesterday: Default::default(),
+        analytics: Default::default(),
+        runtime_slots: None,
+        range: TimeRange::new(now - Duration::hours(1), now).unwrap(),
+        totals: Default::default(),
+        provider_accounts: Default::default(),
+        trend: Vec::new(),
+        account_usage: Vec::new(),
+        recent_requests: Vec::new(),
+    });
+
+    for (kind, metrics) in [
+        (
+            "usage",
+            ["inputTokens", "outputTokens", "cachedInputTokens"],
+        ),
+        (
+            "latency",
+            ["firstTokenP95Ms", "latencyP95Ms", "outputThroughputP50"],
+        ),
+        ("errors", ["errors", "successRate", "requests"]),
+    ] {
+        let response = observability::router::<AdminTestState>()
+            .with_state(fixture.state())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/admin/dashboard/summary?kind={kind}"))
+                    .header(header::COOKIE, "cpr_session=valid-session")
+                    .header(header::ACCEPT_LANGUAGE, "en")
+                    .header("x-request-id", format!("req_trend_metrics_{kind}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(status, StatusCode::OK, "{kind}: {value}");
+        let summary = value["data"]["trend"]["summary"].as_array().unwrap();
+        assert_eq!(summary.len(), metrics.len());
+        for (item, metric) in summary.iter().zip(metrics) {
+            assert_eq!(item["metric"], metric);
+            assert!(item.get("label").is_none());
+            assert!(item["value"].is_string());
+        }
+    }
+}

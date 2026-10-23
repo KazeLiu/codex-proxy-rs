@@ -4,6 +4,9 @@ import { ZIconButton, ZInput, ZSelect } from '@codex-proxy/ui'
 
 import { RefreshCw, Search } from '@lucide/vue'
 
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
 defineProps<{
   refreshing: boolean
   loading: boolean
@@ -13,23 +16,25 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
+const { t } = useI18n({ useScope: 'global' })
+
 const field = defineModel<UsageRecordFilterField>('field', { required: true })
 const value = defineModel<string>('value', { required: true })
-const fieldOptions = [
-  { value: 'key', label: '密钥名称' },
-  { value: 'account', label: '账号' },
-  { value: 'model', label: '模型' },
-]
+const fieldOptions = computed(() => [
+  { value: 'key', label: t('usage.filters.keyName') },
+  { value: 'account', label: t('usage.filters.account') },
+  { value: 'model', label: t('usage.fields.model') },
+])
 </script>
 
 <template>
-  <div class="flex w-full flex-wrap items-center gap-3" role="group" aria-label="使用记录筛选与操作">
+  <div class="flex w-full flex-wrap items-center gap-3" role="group" :aria-label="t('usage.filters.label')">
     <div class="grid w-full min-w-0 grid-cols-[8rem_minmax(0,1fr)] gap-2 sm:w-md sm:flex-none">
-      <ZSelect v-model="field" :options="fieldOptions" aria-label="请求明细筛选字段" />
+      <ZSelect v-model="field" :options="fieldOptions" :aria-label="t('usage.filters.fieldLabel')" />
       <ZInput
         v-model="value"
-        placeholder="输入筛选内容"
-        aria-label="请求明细筛选内容"
+        :placeholder="t('usage.filters.enterFilterValue')"
+        :aria-label="t('usage.filters.valueLabel')"
         class="w-full"
       >
         <template #prefix>
@@ -42,7 +47,7 @@ const fieldOptions = [
       <slot name="actions" />
       <ZIconButton
         size="default"
-        aria-label="刷新使用记录"
+        :aria-label="t('usage.filters.refreshUsageHistory')"
         :loading="refreshing"
         :disabled="loading || refreshing"
         @click="emit('refresh')"

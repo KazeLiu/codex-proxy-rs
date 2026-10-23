@@ -2,8 +2,16 @@
 import { ZCard, ZEmpty, ZSegmented } from '@codex-proxy/ui'
 
 import { Box, CheckCircle2, Monitor, RefreshCw, ShieldCheck, Terminal, TriangleAlert } from '@lucide/vue'
+
 import { computed, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatProviderLabel, isSupportedProvider, providerIcon } from '@/utils/providers'
+
+const props = defineProps<{
+  profiles: WireProfile[]
+}>()
+
+const { t } = useI18n({ useScope: 'global' })
 
 interface WireProfile {
   provider: string
@@ -29,10 +37,6 @@ interface WireProfile {
     error?: string | null
   } | null
 }
-
-const props = defineProps<{
-  profiles: WireProfile[]
-}>()
 
 const activeProvider = shallowRef('')
 
@@ -63,7 +67,7 @@ const versionParts = computed(() => {
 const releaseLabel = computed(() => {
   const release = profile.value?.release
   if (!release?.latestVersion)
-    return '尚未检查'
+    return t('dashboard.clientIdentity.notChecked')
   return release.latestBuild ? `${release.latestVersion} · Build ${release.latestBuild}` : release.latestVersion
 })
 
@@ -71,8 +75,8 @@ const releaseStatus = computed(() => {
   const current = profile.value
   if (!current?.release) {
     return {
-      label: current?.attributes.some(item => item.label === '版本策略' && item.value === '固定自定义') ? '固定自定义' : '当前生效',
-      title: '跟随通用设置的新请求使用此身份',
+      label: current?.attributes.some(item => item.label === t('dashboard.clientIdentity.versionPolicy') && item.value === t('dashboard.clientIdentity.customVersion')) ? t('dashboard.clientIdentity.customVersion') : t('dashboard.clientIdentity.active'),
+      title: t('dashboard.clientIdentity.activeDescription'),
       tone: 'bg-cp-info-container text-cp-info-on-container',
       icon: ShieldCheck,
     }
@@ -81,31 +85,31 @@ const releaseStatus = computed(() => {
   const status = current.release.status ?? 'unchecked'
   if (status === 'aligned') {
     return {
-      label: '制品一致',
-      title: '当前生效版本与官方最新发布一致',
+      label: t('dashboard.clientIdentity.upToDate'),
+      title: t('dashboard.clientIdentity.upToDateDescription'),
       tone: 'bg-cp-success-container text-cp-success-on-container',
       icon: CheckCircle2,
     }
   }
   if (status === 'review_required') {
     return {
-      label: '发现新版',
-      title: `官方最新版本 ${releaseLabel.value}`,
+      label: t('dashboard.clientIdentity.updateAvailable'),
+      title: t('dashboard.clientIdentity.latestRelease', { releaseLabel: releaseLabel.value }),
       tone: 'bg-cp-warning-container text-cp-warning-on-container',
       icon: TriangleAlert,
     }
   }
   if (status === 'check_failed') {
     return {
-      label: '检查失败',
-      title: current.release.error || '官方版本检查失败',
+      label: t('dashboard.clientIdentity.checkFailed'),
+      title: current.release.error || t('dashboard.clientIdentity.checkFailedDescription'),
       tone: 'bg-cp-error-container text-cp-error-on-container',
       icon: TriangleAlert,
     }
   }
   return {
-    label: '待检查',
-    title: '尚未检查官方发布渠道',
+    label: t('dashboard.clientIdentity.pending'),
+    title: t('dashboard.clientIdentity.pendingDescription'),
     tone: 'bg-cp-cyan-container text-cp-cyan-on-container',
     icon: RefreshCw,
   }
@@ -113,12 +117,12 @@ const releaseStatus = computed(() => {
 
 const verifiedLabel = computed(() => {
   const verifiedAt = profile.value?.verifiedAtDisplay
-  return verifiedAt ? `画像核验 ${verifiedAt}` : undefined
+  return verifiedAt ? t('dashboard.clientIdentity.verifiedAt', { verifiedAt }) : undefined
 })
 
 const checkedLabel = computed(() => {
   const checkedAt = profile.value?.release?.checkedAtDisplay
-  return checkedAt ? `发布检查 ${checkedAt}` : undefined
+  return checkedAt ? t('dashboard.clientIdentity.checkedAt', { checkedAt }) : undefined
 })
 
 function toPascalCase(value: string) {
@@ -133,7 +137,7 @@ const clientIdentity = computed(() => {
   const current = profile.value
   if (!current)
     return '—'
-  const value = current.attributes.find(attribute => attribute.label === '客户端标识')?.value ?? '—'
+  const value = current.attributes.find(attribute => attribute.label === t('dashboard.clientIdentity.clientId'))?.value ?? '—'
   return current.provider === 'xai' ? toPascalCase(value) : value
 })
 
@@ -142,12 +146,12 @@ const identityAttributes = computed(() => {
   if (!current)
     return []
   return isSupportedProvider(current.provider)
-    ? [{ label: '客户端标识', value: clientIdentity.value }]
+    ? [{ label: t('dashboard.clientIdentity.clientId'), value: clientIdentity.value }]
     : current.attributes
 })
 
 const authProtocol = computed(() => {
-  const value = profile.value?.attributes.find(attribute => attribute.label === 'Token 认证')?.value
+  const value = profile.value?.attributes.find(attribute => attribute.label === t('dashboard.clientIdentity.tokenAuth'))?.value
   if (!value)
     return '—'
   return toPascalCase(value)
@@ -183,12 +187,12 @@ watch(
     <template #header>
       <div class="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <h2 class="m-0 pt-0.5 text-xl leading-[1.15] font-heavy text-cp-text text-balance">
-          通用上游身份
+          {{ t('dashboard.clientIdentity.title') }}
         </h2>
         <div v-if="providerOptions.length > 1" class="min-w-0 max-w-full overflow-x-auto">
           <ZSegmented
             v-model="activeProvider"
-            aria-label="上游平台"
+            :aria-label="t('dashboard.clientIdentity.provider')"
             :options="providerOptions"
             :style="{ width: `${providerOptions.length * 40 + 4}px` }"
             display="icon"
@@ -198,11 +202,11 @@ watch(
     </template>
 
     <template #body>
-      <ZEmpty v-if="!profile" title="暂无请求身份" surface="inset" class="min-h-71.75 flex-1 place-content-center" />
+      <ZEmpty v-if="!profile" :title="t('dashboard.clientIdentity.empty')" surface="inset" class="min-h-71.75 flex-1 place-content-center" />
 
       <div v-else class="flex flex-1">
         <section
-          aria-label="请求身份组成"
+          :aria-label="t('dashboard.clientIdentity.attributes')"
           class="grid min-w-0 flex-1 content-between gap-6 rounded-cp-lg bg-cp-fill-alter/70 px-5 py-5.5 sm:px-6 sm:py-5"
           :class="
             verifiedLabel || checkedLabel
@@ -245,7 +249,7 @@ watch(
                 v-if="profile.build"
                 class="shrink-0 font-mono text-[10px] leading-none font-emphasis tabular-nums text-cp-text-quaternary"
               >
-                Build {{ profile.build }}
+                {{ t('common.fields.build') }} {{ profile.build }}
               </span>
             </div>
           </div>
@@ -254,7 +258,7 @@ watch(
             <div v-if="profile.provider === 'xai'" class="min-w-0 flex-auto">
               <dt class="flex items-center gap-1.5 text-[10px] leading-none font-bold text-cp-text-quaternary">
                 <ShieldCheck class="size-3.25 text-cp-text-tertiary" />
-                认证协议
+                {{ t('dashboard.clientIdentity.authProtocol') }}
               </dt>
               <dd
                 class="mt-2 mb-0 font-mono text-cp-lg leading-snug font-bold wrap-anywhere tabular-nums text-cp-text"
@@ -267,7 +271,7 @@ watch(
             <div class="min-w-0 flex-auto">
               <dt class="flex items-center gap-1.5 text-[10px] leading-none font-bold text-cp-text-quaternary">
                 <Monitor class="size-3.25 text-cp-text-tertiary" />
-                {{ profile.provider === 'openai' ? '模拟运行环境' : '运行环境' }}
+                {{ profile.provider === 'openai' ? t('dashboard.clientIdentity.emulatedEnvironment') : t('dashboard.clientIdentity.environment') }}
               </dt>
               <dd
                 class="mt-2 mb-0 font-mono text-cp-lg leading-snug font-bold wrap-anywhere tabular-nums text-cp-text"
