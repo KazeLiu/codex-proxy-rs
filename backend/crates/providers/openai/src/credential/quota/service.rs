@@ -72,6 +72,7 @@ impl CodexCredentialQuotaService {
             upstream_refresh_locks: Mutex::new(BTreeMap::new()),
             store: Arc::clone(repository.store()),
             repository,
+            model_catalog: None,
             profile,
             http,
             base_url,
@@ -88,6 +89,14 @@ impl CodexCredentialQuotaService {
                 )
             }),
         }
+    }
+
+    pub(crate) fn with_model_catalog(
+        mut self,
+        catalog: Arc<CodexCredentialCatalogService>,
+    ) -> Self {
+        self.model_catalog = Some(catalog);
+        self
     }
 
     /// 注入首查随机延迟采样器（测试用确定性节奏）；生产默认均匀

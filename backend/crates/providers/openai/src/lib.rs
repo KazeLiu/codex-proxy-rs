@@ -149,15 +149,18 @@ pub async fn initialize(
         config.base_url().to_owned(),
         ports.catalog_cache(),
     ));
-    let quota = Arc::new(CodexCredentialQuotaService::new(
-        repository.clone(),
-        profile.clone(),
-        http.clone(),
-        config.base_url().to_owned(),
-        ports.cooldowns(),
-        Arc::clone(&leases),
-        Arc::clone(&runtime_policy),
-    ));
+    let quota = Arc::new(
+        CodexCredentialQuotaService::new(
+            repository.clone(),
+            profile.clone(),
+            http.clone(),
+            config.base_url().to_owned(),
+            ports.cooldowns(),
+            Arc::clone(&leases),
+            Arc::clone(&runtime_policy),
+        )
+        .with_model_catalog(Arc::clone(&catalog)),
+    );
     let profile_statistics = Arc::new(CodexCredentialProfileService::new(
         repository.clone(),
         profile.clone(),

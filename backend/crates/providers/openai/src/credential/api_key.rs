@@ -107,6 +107,7 @@ pub(crate) fn with_quota_query_mode(
         QuotaQueryMode::KimiCodingGlobal => Some("kimi_coding_global"),
         QuotaQueryMode::Deepseek => Some("deepseek"),
         QuotaQueryMode::Sub2api => Some("sub2api"),
+        QuotaQueryMode::CommandCode => Some("command_code"),
     };
     if let Some(query) = query {
         data.insert(

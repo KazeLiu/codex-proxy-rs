@@ -58,6 +58,7 @@ use crate::transport::{
     CodexRateLimitResetCredits, CodexRateLimitResetCreditsConsumeResult, CodexRequestContext,
 };
 
+use super::catalog::CodexCredentialCatalogService;
 use super::repository::{CodexCredentialRepository, CredentialRepositoryError};
 use super::security::CodexRuntimeCredential;
 use document::{
@@ -178,6 +179,7 @@ pub struct CodexCredentialQuotaService {
         >,
     >,
     repository: CodexCredentialRepository,
+    model_catalog: Option<Arc<CodexCredentialCatalogService>>,
     store: Arc<dyn ProviderAccountStore>,
     profile: CodexWireProfileState,
     http: Client,

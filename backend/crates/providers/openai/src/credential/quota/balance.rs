@@ -1,4 +1,6 @@
-//! Kimi、DeepSeek 与 Sub2API 余额响应的非秘密投影，不负责网络或持久化
+//! 上游余额与额度窗口的非秘密投影，不负责网络或持久化
+
+mod command_code;
 
 use chrono::{DateTime, Utc};
 use gateway_admin::model::quota::{
@@ -14,14 +16,6 @@ pub(crate) fn parse(
     mode: QuotaQueryMode,
     observed_at: DateTime<Utc>,
 ) -> Result<QuotaResponse, ProviderAdminError> {
-    let entries = match mode {
-        QuotaQueryMode::Kimi => parse_kimi(value, "CNY")?,
-        QuotaQueryMode::KimiGlobal => parse_kimi(value, "USD")?,
-        QuotaQueryMode::KimiCoding | QuotaQueryMode::KimiCodingGlobal => parse_kimi_coding(value)?,
-        QuotaQueryMode::Deepseek => parse_deepseek(value)?,
-        QuotaQueryMode::Sub2api => parse_sub2api(value)?,
-        QuotaQueryMode::Disabled | QuotaQueryMode::Cpr => return Err(invalid_response()),
-    };
     let mut account = QuotaAccount {
         id: "balance".to_owned(),
         label: "上游额度".to_owned(),
@@ -30,6 +24,18 @@ pub(crate) fn parse(
         observed_at: Some(observed_at),
         windows: Vec::new(),
         balances: Vec::new(),
+    };
+    let entries = match mode {
+        QuotaQueryMode::Kimi => parse_kimi(value, "CNY")?,
+        QuotaQueryMode::KimiGlobal => parse_kimi(value, "USD")?,
+        QuotaQueryMode::KimiCoding | QuotaQueryMode::KimiCodingGlobal => parse_kimi_coding(value)?,
+        QuotaQueryMode::Deepseek => parse_deepseek(value)?,
+        QuotaQueryMode::Sub2api => parse_sub2api(value)?,
+        QuotaQueryMode::CommandCode => {
+            account.windows = command_code::parse(value)?;
+            Vec::new()
+        }
+        QuotaQueryMode::Disabled | QuotaQueryMode::Cpr => return Err(invalid_response()),
     };
     for (index, entry) in entries.into_iter().enumerate() {
         if entry.unit.as_deref() != Some("%") {
@@ -73,7 +79,9 @@ pub(crate) fn query_url(
         QuotaQueryMode::KimiCodingGlobal => ("https://api.kimi.ai", "/coding/v1/usages"),
         QuotaQueryMode::Deepseek => (base_url, "/user/balance"),
         QuotaQueryMode::Sub2api => (base_url, "/v1/usage"),
-        QuotaQueryMode::Disabled | QuotaQueryMode::Cpr => return Err(invalid_response()),
+        QuotaQueryMode::Disabled | QuotaQueryMode::Cpr | QuotaQueryMode::CommandCode => {
+            return Err(invalid_response());
+        }
     };
     let mut url =
         crate::transport::parse_upstream_base_url(base_url).ok_or_else(invalid_response)?;

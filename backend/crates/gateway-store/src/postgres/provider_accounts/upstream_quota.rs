@@ -28,7 +28,7 @@ pub(super) async fn read(
            and p.authentication_kind='api_key'
            and (p.provider_credentials_json->>'fetch_upstream_quota'='true'
              or p.provider_credentials_json->>'balance_query' in
-                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api'))",
+                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api', 'command_code'))",
     )
     .bind(ids)
     .fetch_all(pool)
@@ -85,7 +85,7 @@ pub(super) async fn claim(
            and p.provider_kind='openai' and p.authentication_kind='api_key'
            and (p.provider_credentials_json->>'fetch_upstream_quota'='true'
              or p.provider_credentials_json->>'balance_query' in
-                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api'))
+                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api', 'command_code'))
          on conflict(account_id) do update set
            credential_revision=excluded.credential_revision, attempt_id=excluded.attempt_id,
            last_attempt_at=excluded.last_attempt_at,
@@ -127,7 +127,7 @@ pub(super) async fn finish(
            and p.id=s.account_id and p.credential_revision=$2 and p.enabled
            and (p.provider_credentials_json->>'fetch_upstream_quota'='true'
              or p.provider_credentials_json->>'balance_query' in
-                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api'))",
+                ('kimi', 'kimi_global', 'kimi_coding', 'kimi_coding_global', 'deepseek', 'sub2api', 'command_code'))",
     )
     .bind(result.claim.account_id.as_str())
     .bind(revision(result.claim.credential_revision.get())?)

@@ -34,6 +34,9 @@ let saved = host.service::<SetQuotaQuerySettings>(UpdateQuotaQuerySettings {
 | `KimiCodingGlobal` / `kimi_coding_global` | 海外编程订阅，`api.kimi.ai/coding/v1/usages` |
 | `Deepseek` / `deepseek` | 账号 Base URL 去掉末尾 `/v1` 后的 `/user/balance` |
 | `Sub2api` / `sub2api` | 账号 Base URL 去掉末尾 `/v1` 后的 `/v1/usage` |
+| `CommandCode` / `command_code` | `api.commandcode.ai/alpha` 下的身份、credits、订阅和用量接口 |
+
+Command Code 沿用 CC Switch 的查询流程：`whoami?limits=1` 取得组织范围，再读取 `billing/credits`、`billing/subscriptions`，按订阅起点及组织范围读取 `usage/summary`。控制面固定使用官方根域名，不拼接账号的 `/provider` 或 `/provider/v1`。五小时和周窗口使用上游明确的 `used/cap`；月额度使用 `totalCost / (totalCost + monthlyCredits + purchasedCredits + freeCredits) * 100`，各组成值缺失时保持未知。返回三类已用百分比窗口，月窗口标记为 `Monthly`，时长与重置时间来自订阅起止，不返回 credits 或费用明细
 
 CPR 与余额查询互斥，分别复用 Provider 的 `fetch_upstream_quota` 和 `balance_query` 配置。保存只修改查询配置，不要求读取或重新提交 Key，不修改账号名称、分组、模型策略、代理或传输设置
 
@@ -69,7 +72,9 @@ let snapshot = host.service::<GetAccountQuota>(AccountQuotaQuery {
 
 时间为 UTC RFC 3339 字符串，未知值为 `None`。原生额度的观测时间位于顶层，API Key 上游各账号的观测时间位于 `upstream.accounts[].observed_at`；尚无成功样本时 `fetched_at=None`、`accounts` 为空
 
-金额使用十进制字符串，不补零、不换算为百分比；只有上游确实提供百分比额度时才形成百分比窗口。`models=None` 表示上游未分享模型列表，不等于分享了一个空列表。查询结果不含 Provider 原始文档、凭据或代理认证信息
+金额使用十进制字符串，不补零、不换算为百分比；额度窗口统一使用 `used_percent` 已用口径，与账号管理一致，透传不反转数值。`models=None` 表示未取得模型列表或上游未分享，不等于分享了一个空列表。查询结果不含 Provider 原始文档、凭据或代理认证信息
+
+Kimi、DeepSeek、Sub2API、Command Code 的查询同时复用宿主模型目录服务，按当前账号凭据版本读取缓存，缺失时查询账号模型接口，并将取得的模型 ID 保存到同一额度快照。模型获取与余额请求共用本次查询期限，失败不丢弃已取得的余额。CPR 模式只保留上游额度响应内已分享的模型，不用上游整站模型目录补全各账号
 
 ## 手动刷新并读取结果
 
@@ -88,9 +93,9 @@ if let Some(error) = result.error {
 
 此操作等待 Provider 的本次刷新结束，再返回完整快照。查询失败不删除可用旧快照；API Key 查询的错误和陈旧标记一并保存。无效账号、快照读取失败等无法提供完整结果的情况直接返回 `ServiceError`
 
-同账号、同凭据版本的并发刷新合并；API Key 主动查询至少间隔十秒，Kimi 编程订阅至少十五秒，过于频繁时 `result.error.kind = "rate_limited"`，仍返回可用快照。保存配置已触发首次查询，不必紧接着再手动刷新
+同账号、同凭据版本的并发刷新合并；API Key 主动查询至少间隔十秒，Kimi 编程订阅与 Command Code 至少十五秒，过于频繁时 `result.error.kind = "rate_limited"`，仍返回可用快照。需要保存后立即展示时，调用上例的 `RefreshAccountQuota` 等待或复用首次查询结果；只调用 `GetAccountQuota` 不会等待后台首次查询完成
 
-CPR 请求期限五秒、响应上限 1 MiB；其他模式十秒，Kimi 编程订阅十五秒，响应上限 256 KiB。期限覆盖发起请求和读取正文，父调用取消也会结束等待。凭据版本、刷新尝试标识共同隔离迟到响应。操作未返回不代表没有保存，可调用 `GetAccountQuota` 重新读取，不自动重试查询
+CPR 请求期限五秒、响应上限 1 MiB；其他模式十秒，Kimi 编程订阅与 Command Code 十五秒，单个响应上限 256 KiB。Command Code 四步查询及模型获取共用十五秒期限。期限覆盖发起请求和读取正文，父调用取消也会结束等待。凭据版本、刷新尝试标识共同隔离迟到响应。操作未返回不代表没有保存，可调用 `GetAccountQuota` 重新读取，不自动重试查询
 
 API Key 查询只更新展示快照，不改变推理调度、凭据健康状态或本地计费。OAuth 原生刷新仍沿用 Provider 的既有观测规则
 
@@ -138,6 +143,8 @@ let body = serde_json::to_vec(&quota)?;
 `ExportQuota` 仅读取保存结果，按指定 Key 的当前发布策略重新限制账号范围和模型，检查 Key 启用与分享设置，并独立匿名化账号 ID。未知金额和币种保持为空。失败的 `ServiceError.kind` 为 `unauthorized`、`forbidden` 或 `unavailable`；插件应映射为 401、403 或 503，并设置 `Cache-Control: no-store`
 
 每一跳重新应用名称和模型披露规则。上游返回 401、403 或关闭分享后，旧快照停止下传，直到同一凭据版本下成功查询后恢复。该服务不执行上游查询、不进入推理调度或计费
+
+账号白名单与 Client Key 访问范围仍会过滤已取得的模型目录，不将白名单本身当成可用模型列表。白名单中的 ID 未出现在目录中时，不会仅因勾选而补入分享结果
 
 ## 权限与操作目录
 

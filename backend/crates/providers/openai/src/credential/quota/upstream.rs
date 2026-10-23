@@ -179,9 +179,17 @@ impl CodexCredentialQuotaService {
                 Ok(())
             };
         }
-        let fetched = fetch(&loaded, mode, deadline).await;
+        let (fetched, models) = tokio::join!(
+            fetch(&loaded, mode, deadline),
+            self.upstream_models(&loaded.account, mode, deadline),
+        );
         let (payload, error_code) = match fetched {
-            Ok(response) => {
+            Ok(mut response) => {
+                if mode != QuotaQueryMode::Cpr {
+                    for account in &mut response.accounts {
+                        account.models.clone_from(&models);
+                    }
+                }
                 let value = serde_json::to_value(response).map_err(|_| invalid_response())?;
                 (
                     Some(OpaqueProviderData::new(
@@ -211,6 +219,28 @@ impl CodexCredentialQuotaService {
             None => Ok(()),
         }
     }
+
+    async fn upstream_models(
+        &self,
+        account: &ProviderAccount,
+        mode: QuotaQueryMode,
+        deadline: tokio::time::Instant,
+    ) -> Option<Vec<String>> {
+        // CPR 未返回模型可能是上游未授权分享，不能用整站目录替代
+        if mode == QuotaQueryMode::Cpr || deadline <= tokio::time::Instant::now() {
+            return None;
+        }
+        let catalog = self.model_catalog.as_ref()?;
+        match tokio::time::timeout_at(deadline, catalog.cached_or_refresh_account_catalog(account))
+            .await
+        {
+            Ok(Ok(catalog)) => Some(catalog.models().to_vec()),
+            _ => {
+                tracing::warn!(account_id = %account.id(), "upstream quota model catalog unavailable");
+                None
+            }
+        }
+    }
 }
 
 async fn fetch(
@@ -237,16 +267,47 @@ async fn fetch(
         loaded.account.outbound_proxy(),
     )
     .map_err(|_| "network_error")?;
-    let url = if mode == QuotaQueryMode::Cpr {
-        crate::transport::endpoint_url(&data.base_url, "quota")
+    let mut response = if mode == QuotaQueryMode::CommandCode {
+        let value = fetch_command_code(&client, &data.api_key, deadline).await?;
+        super::balance::parse(&value, mode, observed_at).map_err(|_| "invalid_response")?
     } else {
-        super::balance::query_url(&data.base_url, mode)
-            .map_err(|_| "invalid_response")?
-            .to_string()
+        let url = if mode == QuotaQueryMode::Cpr {
+            crate::transport::endpoint_url(&data.base_url, "quota")
+        } else {
+            super::balance::query_url(&data.base_url, mode)
+                .map_err(|_| "invalid_response")?
+                .to_string()
+        };
+        let bytes = fetch_bytes(&client, &url, &data.api_key, deadline, maximum_bytes).await?;
+        if mode == QuotaQueryMode::Cpr {
+            serde_json::from_slice(&bytes).map_err(|_| "invalid_response")?
+        } else {
+            let value = serde_json::from_slice(&bytes).map_err(|_| "invalid_response")?;
+            super::balance::parse(&value, mode, observed_at).map_err(|_| "invalid_response")?
+        }
     };
+    if mode != QuotaQueryMode::Cpr {
+        for account in &mut response.accounts {
+            account.label = loaded.account.name().to_owned();
+        }
+    }
+    response.validate().map_err(|_| "invalid_response")?;
+    Ok(response)
+}
+
+async fn fetch_bytes(
+    client: &Client,
+    url: &str,
+    api_key: &str,
+    deadline: tokio::time::Instant,
+    maximum_bytes: usize,
+) -> Result<Vec<u8>, &'static str> {
+    if deadline <= tokio::time::Instant::now() {
+        return Err("timeout");
+    }
     let request = client
         .get(url)
-        .bearer_auth(&data.api_key)
+        .bearer_auth(api_key)
         .header("Accept", "application/json")
         .send();
     let mut response = tokio::time::timeout_at(deadline, request)
@@ -307,19 +368,71 @@ async fn fetch(
             },
         );
     }
-    let response: QuotaResponse = if mode == QuotaQueryMode::Cpr {
-        serde_json::from_slice(&bytes).map_err(|_| "invalid_response")?
-    } else {
-        let value = serde_json::from_slice(&bytes).map_err(|_| "invalid_response")?;
-        let mut response =
-            super::balance::parse(&value, mode, observed_at).map_err(|_| "invalid_response")?;
-        for account in &mut response.accounts {
-            account.label = loaded.account.name().to_owned();
-        }
-        response
-    };
-    response.validate().map_err(|_| "invalid_response")?;
-    Ok(response)
+    Ok(bytes)
+}
+
+async fn fetch_command_code(
+    client: &Client,
+    api_key: &str,
+    deadline: tokio::time::Instant,
+) -> Result<Value, &'static str> {
+    let whoami = command_code_json(
+        client,
+        api_key,
+        "/alpha/whoami",
+        &[("limits", "1")],
+        deadline,
+    )
+    .await?;
+    let org_id = whoami.pointer("/org/id").and_then(Value::as_str);
+    let org_params = org_id.map(|id| vec![("orgId", id)]).unwrap_or_default();
+    let credits = command_code_json(
+        client,
+        api_key,
+        "/alpha/billing/credits",
+        &org_params,
+        deadline,
+    )
+    .await?;
+    let subscription = command_code_json(
+        client,
+        api_key,
+        "/alpha/billing/subscriptions",
+        &org_params,
+        deadline,
+    )
+    .await?;
+    let mut summary_params = org_params;
+    if let Some(start) = subscription
+        .pointer("/data/currentPeriodStart")
+        .and_then(Value::as_str)
+    {
+        summary_params.push(("since", start));
+    }
+    let summary = command_code_json(
+        client,
+        api_key,
+        "/alpha/usage/summary",
+        &summary_params,
+        deadline,
+    )
+    .await?;
+    Ok(serde_json::json!({"credits": credits, "subscription": subscription, "summary": summary}))
+}
+
+async fn command_code_json(
+    client: &Client,
+    api_key: &str,
+    path: &str,
+    params: &[(&str, &str)],
+    deadline: tokio::time::Instant,
+) -> Result<Value, &'static str> {
+    // 控制面固定在官方根域名，不把 /provider 或 /provider/v1 拼进查询路径
+    let mut url = url::Url::parse("https://api.commandcode.ai").map_err(|_| "invalid_response")?;
+    url.set_path(path);
+    url.query_pairs_mut().extend_pairs(params.iter().copied());
+    let bytes = fetch_bytes(client, url.as_str(), api_key, deadline, 256 * 1024).await?;
+    serde_json::from_slice(&bytes).map_err(|_| "invalid_response")
 }
 
 fn store_failure(error: gateway_core::error::StoreError) -> ProviderAdminError {
@@ -329,7 +442,9 @@ fn store_failure(error: gateway_core::error::StoreError) -> ProviderAdminError {
 fn query_timeout(mode: QuotaQueryMode) -> Duration {
     Duration::from_secs(match mode {
         QuotaQueryMode::Cpr => 5,
-        QuotaQueryMode::KimiCoding | QuotaQueryMode::KimiCodingGlobal => 15,
+        QuotaQueryMode::KimiCoding
+        | QuotaQueryMode::KimiCodingGlobal
+        | QuotaQueryMode::CommandCode => 15,
         _ => 10,
     })
 }

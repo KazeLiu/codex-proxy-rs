@@ -16,6 +16,7 @@ pub enum QuotaQueryMode {
     KimiCodingGlobal,
     Deepseek,
     Sub2api,
+    CommandCode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
