@@ -69,7 +69,9 @@ export interface KeyUsageRecord {
   billing: UsageBilling | null
   latencyMs: number | null
   firstTokenLatencyMs: number | null
-  latencyDetails: Pick<UsageLatencyDetails, 'firstEventMs' | 'firstReasoningMs' | 'firstTextMs'>
+  latencyDetails: Pick<UsageLatencyDetails,
+    | 'localResponseMs' | 'upstreamResponseMs' | 'upstreamApiOverheadMs' | 'upstreamEngineMs'
+    | 'firstEventMs' | 'firstReasoningMs' | 'firstTextMs'>
   clientIp: string | null
   userAgent: string | null
   status: 'success' | 'error' | 'incomplete' | 'cancelled' | 'running' | 'unknown'

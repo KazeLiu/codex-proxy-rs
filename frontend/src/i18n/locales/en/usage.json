@@ -60,6 +60,8 @@
       "total": "Total"
     },
     "performance": {
+      "upstream": "Upstream",
+      "localResponseTime": "Local response time",
       "ttftHelp": "TTFT: time to first token",
       "concurrency": "Concurrency",
       "averageConcurrency": "Average concurrency",

@@ -731,6 +731,7 @@ fn duration_millis(duration: std::time::Duration) -> u64 {
 
 pub(super) struct ResponseObservation {
     pub(super) timing_started_at: Instant,
+    response_started_at: Option<Instant>,
     pub(super) usage: Usage,
     pub(super) cost: CostEstimate,
     pub(super) timings: ModelRequestTimings,
@@ -742,6 +743,7 @@ impl ResponseObservation {
     pub(super) fn new(timing_started_at: Instant) -> Self {
         Self {
             timing_started_at,
+            response_started_at: None,
             usage: Usage::new(),
             cost: CostEstimate::unavailable(),
             timings: ModelRequestTimings::default(),
@@ -758,7 +760,16 @@ impl ResponseObservation {
         self.timings.latency_ms = Some(self.elapsed_ms());
     }
 
+    pub(super) fn start_response(&mut self) {
+        self.response_started_at.get_or_insert_with(Instant::now);
+    }
+
     pub(super) fn observe_event(&mut self, event: &GatewayEvent) {
+        if matches!(event, GatewayEvent::Completed(_)) && self.timings.local_response_ms.is_none() {
+            self.timings.local_response_ms = self
+                .response_started_at
+                .map(|started_at| duration_millis(started_at.elapsed()));
+        }
         if let GatewayEvent::Usage(observed) = event {
             self.usage.merge(observed);
         }
@@ -783,6 +794,8 @@ impl ResponseObservation {
     }
 
     pub(super) fn reset_for_attempt(&mut self) {
+        self.response_started_at = None;
+        self.timings.local_response_ms = None;
         self.usage = Usage::new();
         self.cost = CostEstimate::unavailable();
         self.client_response_id = None;

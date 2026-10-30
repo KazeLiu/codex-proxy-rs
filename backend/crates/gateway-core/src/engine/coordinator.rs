@@ -934,6 +934,7 @@ where
 
             let boundary = {
                 let current = self.current.as_mut().ok_or(EngineError::NoActiveAttempt)?;
+                self.observation.start_response();
                 poll_stream_item(
                     &mut current.stream,
                     self.cancellation.clone(),

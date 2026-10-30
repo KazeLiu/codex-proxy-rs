@@ -57,6 +57,7 @@ export interface UsageBilling {
 }
 
 export interface UsageLatencyDetails {
+  localResponseMs?: number
   upstreamResponseMs?: number
   upstreamApiOverheadMs?: number
   upstreamEngineMs?: number

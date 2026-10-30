@@ -223,6 +223,8 @@ pub struct UsageLatencyDetailsView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub openai_processing_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_response_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_response_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_api_overhead_ms: Option<f64>,

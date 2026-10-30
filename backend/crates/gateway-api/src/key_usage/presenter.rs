@@ -207,6 +207,8 @@ pub(super) struct RecordView {
 #[serde(rename_all = "camelCase")]
 struct OutputTimingView {
     #[serde(skip_serializing_if = "Option::is_none")]
+    local_response_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     upstream_response_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     upstream_api_overhead_ms: Option<f64>,
@@ -249,6 +251,7 @@ fn usage_record(value: UsageListRecord, time: crate::time::TimePresenter) -> Rec
         latency_ms: value.latency_ms,
         first_token_latency_ms: value.first_token_ms,
         latency_details: OutputTimingView {
+            local_response_ms: value.local_response_ms,
             upstream_response_ms: value.upstream_response_ms,
             upstream_api_overhead_ms: value.upstream_api_overhead_ms,
             upstream_engine_ms: value.upstream_engine_ms,

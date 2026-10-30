@@ -2221,6 +2221,7 @@ async fn shared_core_usage_and_timings_preserve_fields_and_reject_invalid_phases
         first_token_ms: Some(7),
         provider_processing_ms: Some(8),
         upstream_response_ms: Some(1_000),
+        local_response_ms: None,
         upstream_api_overhead_ms: Some(120.25),
         upstream_engine_ms: Some(6400.0),
         latency_ms: Some(9),

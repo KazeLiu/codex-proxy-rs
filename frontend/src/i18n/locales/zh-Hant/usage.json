@@ -60,6 +60,8 @@
       "total": "總耗時"
     },
     "performance": {
+      "upstream": "上游",
+      "localResponseTime": "本地響應耗時",
       "ttftHelp": "TTFT：首個 Token 耗時",
       "concurrency": "並發",
       "averageConcurrency": "平均並發",

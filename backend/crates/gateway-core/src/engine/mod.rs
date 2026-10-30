@@ -1068,6 +1068,8 @@ pub struct ModelRequestTimings {
     pub first_reasoning_ms: Option<u64>,
     pub first_text_ms: Option<u64>,
     pub first_token_ms: Option<u64>,
+    /// 当前冷流首次执行到完成事件的本地耗时，不含选号和此前重试
+    pub local_response_ms: Option<u64>,
     pub provider_processing_ms: Option<u64>,
     pub upstream_response_ms: Option<u64>,
     pub upstream_api_overhead_ms: Option<f64>,

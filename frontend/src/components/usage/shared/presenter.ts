@@ -99,15 +99,17 @@ export function usageModelDisplay(record: UsageModelRecord) {
 }
 
 export function usagePerformanceDetails(record: UsagePerformanceRecord) {
-  const upstreamMs = upstreamResponseMs(record.latencyDetails)
+  const upstreamMs = positiveDuration(record.latencyDetails?.upstreamResponseMs)
+  const responseMs = upstreamMs ?? positiveDuration(record.latencyDetails?.localResponseMs)
   const outputTokens = record.tokenDetails?.outputTokens
-  // 输出已包含推理 Token，分母只取同一完成响应的官方时间跨度
+  // 输出已包含推理 Token，本地响应计时独立展示来源，不冒充上游时间
   const throughput = typeof outputTokens === 'number' && Number.isFinite(outputTokens) && outputTokens > 0
-    && upstreamMs !== null
-    ? outputTokens * 1000 / upstreamMs
+    && responseMs !== null
+    ? outputTokens * 1000 / responseMs
     : null
 
   return {
+    throughputSource: throughput === null ? null : upstreamMs !== null ? 'upstream' : 'local',
     throughputDisplay: throughput === null
       ? '—'
       : `${formatCompactNumber(throughput)} tok/s`,
@@ -118,11 +120,19 @@ export function usagePerformanceDetails(record: UsagePerformanceRecord) {
 export function usageLatencyDetails(record: UsageLatencyRecord) {
   const latencyDetails = record.latencyDetails
   const firstTokenMs = durationValue(record.firstTokenLatencyMs)
-  const upstreamMs = upstreamResponseMs(latencyDetails)
+  const upstreamMs = positiveDuration(latencyDetails?.upstreamResponseMs)
   const totalMs = durationValue(record.latencyMs)
   const firstReasoningMs = durationValue(latencyDetails?.firstReasoningMs)
   const firstTextMs = durationValue(latencyDetails?.firstTextMs)
   const requestItems: UsageTimingItem[] = []
+  const localResponseMs = positiveDuration(latencyDetails?.localResponseMs)
+
+  if (localResponseMs !== null) {
+    requestItems.push({
+      label: t('usage.performance.localResponseTime'),
+      value: formatDuration(localResponseMs),
+    })
+  }
 
   if (firstTokenMs !== null && totalMs !== null && firstTokenMs <= totalMs) {
     requestItems.push({
@@ -298,9 +308,9 @@ function formatUpstreamDuration(value: number) {
   return `${Number(value.toFixed(3))} ms`
 }
 
-function upstreamResponseMs(details: UsageCommonRecord['latencyDetails']) {
-  const value = durationValue(details?.upstreamResponseMs)
-  return value !== null && value > 0
-    ? value
+function positiveDuration(value: unknown) {
+  const duration = durationValue(value)
+  return duration !== null && duration > 0
+    ? duration
     : null
 }

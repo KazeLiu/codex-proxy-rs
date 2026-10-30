@@ -138,6 +138,7 @@ fn usage_record() -> UsageListRecord {
         first_token_ms: Some(210),
         provider_processing_ms: None,
         upstream_response_ms: Some(1_000),
+        local_response_ms: None,
         upstream_api_overhead_ms: None,
         upstream_engine_ms: Some(2.450638),
         latency_ms: Some(1250),

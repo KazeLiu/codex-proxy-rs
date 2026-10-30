@@ -77,6 +77,8 @@ struct RequestTimings {
 #[serde(rename_all = "camelCase")]
 struct LocalTimings {
     #[serde(skip_serializing_if = "Option::is_none")]
+    response_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     transport_decision_wait_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     connect_ms: Option<u64>,
@@ -197,6 +199,7 @@ impl RequestObservation {
     ) -> StoreResult<sqlx::types::Json<Box<RawValue>>> {
         let timings = &value.timings;
         validate_integers([
+            timings.local_response_ms,
             timings.transport_decision_wait_ms,
             timings.connect_ms,
             timings.headers_ms,
@@ -225,6 +228,7 @@ impl RequestObservation {
         let observation = Self {
             timings: Some(RequestTimings {
                 local: Some(LocalTimings {
+                    response_ms: timings.local_response_ms,
                     transport_decision_wait_ms: timings.transport_decision_wait_ms,
                     connect_ms: timings.connect_ms,
                     headers_ms: timings.headers_ms,

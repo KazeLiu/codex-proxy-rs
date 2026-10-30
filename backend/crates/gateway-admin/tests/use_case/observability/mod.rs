@@ -1451,6 +1451,7 @@ fn total_record(
         first_token_ms: None,
         provider_processing_ms: None,
         upstream_response_ms: None,
+        local_response_ms: None,
         upstream_api_overhead_ms: None,
         upstream_engine_ms: None,
         latency_ms: Some(100),

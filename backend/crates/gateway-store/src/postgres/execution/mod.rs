@@ -216,6 +216,7 @@ pub use gateway_core::{engine::ModelRequestTimings, metering::Usage as ModelRequ
 fn validate_timings(timings: &ModelRequestTimings) -> StoreResult<()> {
     if let Some(total) = timings.latency_ms {
         let phases = [
+            timings.local_response_ms,
             timings.transport_decision_wait_ms,
             timings.connect_ms,
             timings.headers_ms,
