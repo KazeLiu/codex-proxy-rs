@@ -109,7 +109,11 @@ export function usagePerformanceDetails(record: UsagePerformanceRecord) {
     : null
 
   return {
-    throughputSource: throughput === null ? null : upstreamMs !== null ? 'upstream' : 'local',
+    throughputSource: throughput === null
+      ? null
+      : upstreamMs !== null
+        ? 'upstream'
+        : 'local',
     throughputDisplay: throughput === null
       ? '—'
       : `${formatCompactNumber(throughput)} tok/s`,
